@@ -1,0 +1,21 @@
+/* Mijn Nieuwe Thema - Pas hieronder de kleuren en typografie aan */
+body {
+    background: #f8fafc !important;
+    color: #1e293b !important;
+}
+
+.topbar, .hero, .post-card, .article-box, .card {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    border-radius: 8px !important;
+}
+
+.brand, .hero h1, .read-more, .back-link {
+    color: #ea580c !important;
+}
+
+.cat-pill.actief, .btn-new {
+    background: #ea580c !important;
+    border-color: #ea580c !important;
+    color: #ffffff !important;
+}

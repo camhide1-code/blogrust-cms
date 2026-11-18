@@ -1,0 +1,13 @@
+/* Standaard Rust Oranje Thema - Het originele BlogRust uiterlijk */
+body {
+    background: #f9fafb;
+    color: #1f2937;
+}
+.brand, .hero h1, .read-more, .back-link {
+    color: #ea580c !important;
+}
+.cat-pill.actief, .btn-new {
+    background: #ea580c !important;
+    border-color: #ea580c !important;
+    color: #ffffff !important;
+}

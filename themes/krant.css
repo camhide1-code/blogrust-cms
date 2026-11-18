@@ -1,0 +1,26 @@
+/* Klassieke Krant Thema - Serif typografie op warm krantenpapier */
+body {
+    background: #f5f2eb !important;
+    color: #1c1917 !important;
+    font-family: Georgia, "Times New Roman", serif !important;
+}
+.topbar, .hero, .post-card, .article-box, .card {
+    background: #fffdf9 !important;
+    border: 2px solid #292524 !important;
+    border-radius: 0px !important;
+    box-shadow: 4px 4px 0px #292524 !important;
+}
+.brand, .hero h1, .read-more, .back-link {
+    color: #991b1b !important;
+}
+.cat-pill.actief, .btn-new {
+    background: #991b1b !important;
+    border-color: #991b1b !important;
+    color: #ffffff !important;
+    border-radius: 2px !important;
+}
+.cat-badge {
+    background: #fef2f2 !important;
+    color: #991b1b !important;
+    border-color: #fca5a5 !important;
+}

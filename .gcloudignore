@@ -1,0 +1,6 @@
+# Sluit de lokale Rust build-map uit bij gcloud run deploy --source .
+target/
+.git/
+.env
+data/*.db-shm
+data/*.db-wal

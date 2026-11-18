@@ -1,0 +1,7 @@
+# BlogRust Git Ignore
+target/
+data/*.db
+data/*.db-*
+.env
+Admin*
+admin*

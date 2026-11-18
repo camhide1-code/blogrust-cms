@@ -1,0 +1,33 @@
+services:
+  blogrust:
+    build: .
+    container_name: blogrust_app
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "3000"
+    volumes:
+      - ./data:/app/data
+      - ./posts:/app/posts
+      - ./plugins:/app/plugins
+      - ./themes:/app/themes
+      - ./media:/app/media
+      - ./scaffolds:/app/scaffolds
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: blogrust_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - blogrust
+
+volumes:
+  caddy_data:
+  caddy_config:

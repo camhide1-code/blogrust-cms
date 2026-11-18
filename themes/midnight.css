@@ -1,0 +1,42 @@
+/* Midnight Dark Thema - Donker developer thema met diepblauwe tinten */
+body {
+    background: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+.topbar, .hero, .post-card, .article-box, .card, .store-card, .media-card {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+h1, h2, h3, .post-card h2 a, .store-card h3 {
+    color: #f8fafc !important;
+}
+.hero p, .summary, .post-meta, .user-badge, .store-card p {
+    color: #94a3b8 !important;
+}
+.brand, .hero h1, .read-more, .back-link {
+    color: #fb923c !important;
+}
+.cat-pill {
+    background: #1e293b !important;
+    border-color: #475569 !important;
+    color: #cbd5e1 !important;
+}
+.cat-pill.actief, .btn-new {
+    background: #ea580c !important;
+    border-color: #ea580c !important;
+    color: #ffffff !important;
+}
+.cat-badge {
+    background: #334155 !important;
+    color: #fdba74 !important;
+    border-color: #475569 !important;
+}
+.tag {
+    background: #1e3a8a !important;
+    color: #93c5fd !important;
+}
+.content code {
+    background: #334155 !important;
+    color: #f8fafc !important;
+}

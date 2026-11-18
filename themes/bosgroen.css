@@ -1,0 +1,23 @@
+/* Bosgroen Minimal Thema - Rustgevend thema met smaragdgroene accenten */
+body {
+    background: #f0fdf4 !important;
+    color: #14532d !important;
+}
+.topbar, .hero, .post-card, .article-box, .card {
+    background: #ffffff !important;
+    border-color: #bbf7d0 !important;
+    border-radius: 14px !important;
+}
+.brand, .hero h1, .read-more, .back-link {
+    color: #15803d !important;
+}
+.cat-pill.actief, .btn-new {
+    background: #15803d !important;
+    border-color: #15803d !important;
+    color: #ffffff !important;
+}
+.cat-badge {
+    background: #dcfce7 !important;
+    color: #166534 !important;
+    border-color: #86efac !important;
+}
