@@ -1,89 +1,77 @@
-# 🦀 BlogRust CMS — Standaard Editie
+# 🦀 Blogrust
 
-Welkom bij **BlogRust**, een razendsnel en modulair Content Management Systeem gebouwd in **Rust** (Axum + SQLite + Argon2), met een **Hugo-stijl Markdown** systeem, **Rhai Plug-in Engine**, **CSS Thema's** en een ingebouwde **Docker Compose & Caddy Generator**.
+**A fast, intuitive, and extensible CMS written in Rust—powered by an embedded Rhai scripting engine.**
 
----
+[![License](https://shields.io)](LICENSE)
+[![Built with Rust](https://shields.io)](https://rust-lang.org)
+[![Powered by Rhai](https://shields.io)](https://rhai.rs)
 
-## 📁 Mappenstructuur in deze folder
+Blogrust combines an effortless writing experience with the raw performance, memory safety, and low resource footprint of Rust. Designed for creators who want simplicity and developers who want full control without heavy legacy bloat.
 
-Wanneer je deze map uitpakt, heb je direct alle bijbehorende mappen klaarstaan:
-
-```text
-blogrust-cms/
-├── README.md               # Deze handleiding met alle Docker & Rust commando's
-├── Cargo.toml              # Rust dependencies (Axum, SQLite, Argon2, Pulldown-cmark, Rhai)
-├── Dockerfile              # Multi-stage Docker build (Rust builder -> Debian slim runtime)
-├── docker-compose.yml      # Docker Compose stack (BlogRust + Caddy reverse proxy)
-├── Caddyfile               # Caddy configuratie (Gzip/Zstd compressie & automatische HTTPS)
-├── .dockerignore           # Sluit lokale build-bestanden uit tijdens Docker builds
-├── src/
-│   └── main.rs             # De Standaard BlogRust CMS broncode (inclusief /instellingen)
-├── data/                   # Hier wordt automatisch je SQLite database (blogrust.db) opgeslagen
-├── posts/                  # Al je blogartikelen als .md bestanden (Hugo-stijl frontmatter)
-├── plugins/                # Rhai (.rhai) plug-ins om artikelen dynamisch te verrijken
-├── themes/                 # CSS (.css) thema's voor het uiterlijk van je website
-├── media/                  # Geüploade afbeeldingen, banners, logo's en iconen
-└── scaffolds/              # Startsjablonen voor nieuwe posts, plug-ins en thema's
-```
+🌐 **Live Demo & Docs:** [Blogrust.com](https://blogrust.com)
 
 ---
 
-## 🐳 Starten met Docker & Caddy (Aanbevolen)
+## ✨ Why Blogrust?
 
-In deze map staan `Dockerfile`, `docker-compose.yml` en `Caddyfile` al voor je klaar. Alle mappen (`./data`, `./posts`, `./plugins`, `./themes`, `./media` en `./scaffolds`) worden automatisch gekoppeld als persistente volumes.
-
-### 1. Containers bouwen en op de achtergrond starten
-Open een terminal (PowerShell, CMD of Bash) in deze map en voer uit:
-
-```bash
-docker compose up -d --build
-```
-
-- Met de standaard `Caddyfile` draait je blog nu via Caddy op: **`http://localhost`** (poort 80).
-- Draai je alleen de BlogRust-container zonder Caddy, dan is je blog bereikbaar op: **`http://localhost:3000`**.
-
-### 2. Live logs bekijken
-Wil je zien wat BlogRust of Caddy op de achtergrond doet?
-
-```bash
-docker compose logs -f
-```
-
-### 3. Containers herstarten (bijv. na het aanpassen van de Caddyfile)
-```bash
-docker compose restart
-```
-
-### 4. Containers stoppen (je data in `./data` en `./posts` blijft veilig bewaard)
-```bash
-docker compose down
-```
+* **Blazingly Fast Core:** Built in Rust for minimal memory usage and instant response times.
+* **Zero-Compile Plugins with Rhai:** Extend functionality, hook into lifecycle events, and build custom logic using embedded [Rhai](https://rhai.rs) scripts—no need to recompile the core binary.
+* **Flexible Theme Engine:** Create clean, customizable themes effortlessly.
+* **Native i18n Support:** Multi-language content and localization built right into the core.
+* **Docs-as-Posts Architecture:** Out of the box, Blogrust ships with Markdown posts that double as interactive documentation. Learn how it works by exploring the live content itself.
 
 ---
 
-## 🦀 Alternatief: Lokaal draaien zonder Docker (via Cargo)
+## 🧩 Build Plugins & Themes (Call for Contributors!)
 
-Heb je Rust lokaal geïnstalleerd? Dan kun je BlogRust ook rechtstreeks starten:
+We are actively growing the Blogrust ecosystem and looking for early builders! Because Blogrust embeds **Rhai**, writing plugins feels familiar to Rust developers while offering safe, sandboxed, hot-reloadable execution.
 
-```bash
-cargo run
+### Quick Example: A Simple Rhai Plugin
+Drop a `.rhai` file into your `/plugins` directory to hook into Blogrust events:
+
+```rhai
+// plugins/hello_world.rhai
+fn on_post_render(post) {
+    post.content += "\n\n*Rendered with Blogrust & Rhai 🦀*";
+    return post;
+}
 ```
 
-Open daarna **`http://127.0.0.1:3000`** in je browser.
+### Ways to Get Involved:
+1. **Build a Plugin:** SEO tools, RSS generators, analytics hooks, or syntax highlighters.
+2. **Design a Theme:** Create minimal, developer-focused, or magazine-style themes.
+3. **Share Your Work:** Open a PR to add your plugin or theme to our upcoming **Community Showcase**!
 
 ---
 
-## ⚙️ Eerste Installatie (`/setup`) & Instellingen (`/instellingen`)
+## 🚀 Quick Start
 
-1. **Eenmalige Setup (`/setup`):**
-   Bij het allereerste bezoek opent automatisch de installatiepagina. Kies daar je **Websitetitel**, **Admin-gebruikersnaam** en **Wachtwoord** (wordt veilig gehasht met Argon2id in `data/blogrust.db`).
-2. **Instellingenpagina (`/instellingen`):**
-   Als je bent ingelogd als Admin kun je via de knop **⚙️ Instellingen** rechtsboven alles aanpassen:
-   - **Websitetitel & Ondertitel**
-   - **🎨 Website Icoon & Browser-tab Favicon** (kies met 1 klik een emoji of een afbeelding uit `media/`)
-   - **🖼️ Website Logo** (kies een logo-afbeelding voor in de bovenbalk met live preview)
-   - **🔑 Admin-account & Wachtwoord wijzigen**
-   - **🐳 Docker Compose & Caddy Keuzeknop:** Wissel met 1 klik tussen:
-     1. *Lokaal met Caddy (`http://localhost` op poort 80)*
-     2. *Productie met Caddy & Automatische HTTPS (Let's Encrypt SSL op jouw eigen domein)*
-     3. *Alleen BlogRust Container (zonder Caddy, direct op poort 3000)*
+```bash
+# Clone the repository
+git clone https://github.com
+cd blogrust
+
+# Run Blogrust (includes built-in Markdown docs as starter posts)
+cargo run --release
+```
+
+Once running, open your browser and visit `http://localhost:8080`. The pre-loaded Markdown posts will guide you through configuration, i18n setup, and building your first Rhai plugin.
+
+---
+
+## 📖 Documentation
+
+Blogrust eats its own dogfood: **the default Markdown posts included in the repository serve as your primary documentation**. Spin up a local instance or visit [Blogrust.com](https://blogrust.com) to read the guides on:
+* Architecture & Configuration
+* Internationalization (`i18n`) Setup
+* Rhai Plugin API & Available Hooks
+* Theme Development
+
+---
+
+## 🤝 Contributing
+
+Contributions, bug reports, and feature requests are welcome! Feel free to check the [issues page](https://github.com) or submit a Pull Request.
+
+If you like the project, consider giving it a **⭐ Star** to help more Rust developers discover it!
+
