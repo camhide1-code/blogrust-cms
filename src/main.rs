@@ -3,6 +3,58 @@
 // Plaats dit bestand in src/main.rs van je eigen BlogRust installatie.
 // ============================================================================
 
+// ============================================================================
+// 🦀 BLOGRUST — Fast, Modular Rust CMS & Community Portal
+// ============================================================================
+// TABLE OF CONTENTS (Use Ctrl+F with the section number or function name):
+//
+// [01] Imports, Core Data Models & Form Structs
+//      - AppState, MarkdownPost, GeinstalleerdePlugin, GeinstalleerdThema
+//      - SetupForm, LoginForm, InstellingenForm, NieuwBerichtForm, DotEnvForm
+//
+// [02] Application Entrypoint & HTTP Router (`fn main`)
+//      - Axum route definitions, port & database startup configuration
+//
+// [03] Environment Variable Engine (`.env` & `.env.example`)
+//      - `parse_dotenv`, `haal_env_waarde`, `maak_dotenv_en_example_inhoud`
+//
+// [04] Authentication, Sessions & Navigation Bar Component
+//      - `maak_sessie_aan`, `haal_ingelogde_gebruiker_op`, `haal_google_gebruiker_op`
+//      - `maak_i18n_switcher_en_script`, `pas_navigatie_plugins_toe`, `maak_nav_rechts_html`
+//
+// [05] Markdown, Hugo Frontmatter & Rhai Plugin Engine
+//      - `markdown_naar_html`, `pas_plugins_toe_op_post`, `parse_markdown_post`
+//      - `laad_alle_posts`, `haal_site_info_op`, `maak_brand_en_favicon_html`
+//
+// [06] Public Blog Index, Search & Post Reader (`/` & `/post/{slug}`)
+//      - `home_pagina`, `toon_post_pagina`
+//      - Google Auth Comments System: `haal_reacties_voor_post`, `verwerk_nieuwe_reactie`
+//
+// [07] Theme Engine & Community Theme Directory (`/themes`)
+//      - `haal_preset_themas`, `lees_geinstalleerde_themas`, `themes_pagina`
+//      - `download_thema_bestand`, `verwerk_thema_actie`
+//
+// [08] Media Library & Multipart Image Uploader (`/media`)
+//      - `media_pagina`, `verwerk_media_upload`, `serveer_media_bestand`
+//
+// [09] Plugin Engine & Community Plugin Directory (`/plugins`)
+//      - `haal_preset_plugins` (`cover.rhai`, `leestijd.rhai`, `reacties.rhai`, `i18n.rhai`)
+//      - `plugins_pagina`, `download_plugin_bestand`, `verwerk_plugin_actie`
+//
+// [10] Markdown Post Editor & CRUD Actions (`/nieuw`, `/bewerk/{slug}`)
+//      - `nieuw_bericht_pagina`, `bewerk_bericht_pagina`, `verwerk_nieuw_bericht`
+//
+// [11] Initial Setup, Argon2id Admin Login & Google OAuth (`/setup`, `/login`, `/auth/google`)
+//      - `setup_formulier`, `verwerk_setup`, `login_formulier`, `verwerk_login`
+//      - `google_auth_pagina`, `haal_email_uit_google_jwt`, `verwerk_google_auth`
+//
+// [12] Download Portal, Pure-Rust ZIP Builder & Settings (`/download`, `/instellingen`)
+//      - `download_portal_pagina`, `maak_zip_archief`, `bouw_project_zip`
+//      - `maak_docker_en_caddy_inhoud`, `instellingen_pagina`, `verwerk_env_generator`
+//
+// [13] Automated Unit & Integration Test Suite (`mod tests`)
+// ============================================================================
+
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
