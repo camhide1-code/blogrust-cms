@@ -769,6 +769,12 @@ fn maak_i18n_switcher_en_script(standaard_taal: &str) -> String {
                 const sel = document.getElementById('blogrust-lang-switcher');
                 if (sel) sel.value = lang;
 
+                // Zorg dat de browser zelf (bijv. Chrome Google Translate) NOOIT code in <textarea>, <pre> of <code> vertaalt!
+                document.querySelectorAll('textarea, pre, code').forEach(el => {{
+                    el.setAttribute('translate', 'no');
+                    el.classList.add('notranslate');
+                }});
+
                 // Loop door ALLE tekst-nodes op de hele pagina (exclusief <script>, <style>, <pre>, <code> en .brand)
                 const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
                 const textNodes = [];
@@ -778,7 +784,7 @@ fn maak_i18n_switcher_en_script(standaard_taal: &str) -> String {
                     if (!parent) continue;
                     const tag = parent.tagName;
                     if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'PRE' || tag === 'CODE' || tag === 'TEXTAREA' || tag === 'OPTION') continue;
-                    if (parent.closest('pre, code, .brand, #brand-preview, #tab-preview, #blogrust-lang-switcher')) continue;
+                    if (parent.closest('textarea, pre, code, .brand, #brand-preview, #tab-preview, #blogrust-lang-switcher')) continue;
                     if (current.nodeValue && current.nodeValue.trim().length > 0) {{
                         textNodes.push(current);
                     }}
@@ -855,12 +861,164 @@ fn maak_i18n_switcher_en_script(standaard_taal: &str) -> String {
     )
 }
 
-// Hulpfunctie: Voer actieve .rhai plug-ins in `plugins/` uit die een `bewerk_navigatie(nav_html)` hook hebben
-fn pas_navigatie_plugins_toe(plugins_map: &str, mut nav_html: String) -> String {
+// Hulpfunctie: Maak een tegen crashes beveiligde Rhai Engine (Anti-Infinite-Loop & Anti-Memory-Bomb Sandbox)
+fn maak_veilige_rhai_engine() -> Engine {
     let mut engine = Engine::new();
+    // Harde limieten zodat een kwaadaardige of foutieve plug-in de server NOOIT kan laten bevriezen of crashen:
+    engine.set_max_operations(50_000); // Stopt oneindige lussen (while true / loop) binnen ~2ms
+    engine.set_max_call_levels(16); // Voorkomt stack-overflow door eindeloze recursie
+    engine.set_max_expr_depths(48, 24); // Voorkomt diepe AST-crashes
+    engine.set_max_string_size(256 * 1024); // Max 256 KB per string (stopt geheugenbommen zoals s += s)
+    engine.set_max_array_size(1_000); // Max 1000 items per lijst
+    engine.set_max_map_size(500); // Max 500 sleutels per map
+
     engine.register_fn("env", |sleutel: &str| -> String {
         haal_env_waarde(sleutel).unwrap_or_default()
     });
+    engine
+}
+
+// Hulpfunctie: Herstel door browser-vertalers (zoals Chrome Translate) per ongeluk vertaalde Rhai-functienamen
+fn herstel_vertaalde_rhai_code(code: &str) -> String {
+    code.replace(
+        "fn edit_message with cover(text, cover, category)",
+        "fn bewerk_bericht_met_cover(tekst, cover, categorie)",
+    )
+    .replace(
+        "fn edit_message_with_cover(text, cover, category)",
+        "fn bewerk_bericht_met_cover(tekst, cover, categorie)",
+    )
+    .replace("fn edit_message with cover", "fn bewerk_bericht_met_cover")
+    .replace("fn edit_title(title)", "fn bewerk_titel(titel)")
+    .replace("fn edit_message(text)", "fn bewerk_bericht(tekst)")
+    .replace("return title;", "return titel;")
+    .replace("return text;", "return tekst;")
+}
+
+// Hulpfunctie: Test en valideer een nieuwe .rhai plug-in vóórdat deze opgeslagen mag worden (Anti-Crash & Anti-XSS)
+fn valideer_veilige_plugin_code(ruwe_code: &str) -> Result<(), String> {
+    let hersteld = herstel_vertaalde_rhai_code(ruwe_code);
+    let code = hersteld.as_str();
+    let kleine_letters = code.to_lowercase();
+    let verboden_patronen = [
+        "document.cookie",
+        "javascript:",
+        "eval(",
+        "crypto.subtle",
+        "xmlhttprequest",
+        "websocket(",
+    ];
+    for patroon in verboden_patronen {
+        if kleine_letters.contains(patroon) {
+            return Err(format!(
+                "Verboden of onveilig script-patroon gedetecteerd: '{}'",
+                patroon
+            ));
+        }
+    }
+
+    let engine = maak_veilige_rhai_engine();
+    let ast = engine
+        .compile(code)
+        .map_err(|e| format!("Rhai syntaxfout in plug-in: {}", e))?;
+
+    // Voer een veilige Dry-Run (proefdraai) uit in de sandbox om oneindige lussen of geheugenbommen direct te vangen
+    let mut scope = Scope::new();
+    for hook in [
+        "bewerk_titel",
+        "edit_title",
+        "bewerk_bericht",
+        "edit_post",
+        "edit_message",
+        "on_post_render",
+        "bewerk_navigatie",
+        "edit_navigation",
+    ] {
+        if ast.iter_functions().any(|f| f.name == hook && f.params.len() == 1) {
+            engine
+                .call_fn::<String>(&mut scope, &ast, hook, ("Test tekst".to_string(),))
+                .map_err(|e| {
+                    format!(
+                        "Plug-in crasht of overschrijdt de sandbox-limiet in '{}': {}",
+                        hook, e
+                    )
+                })?;
+        }
+    }
+    for hook3 in ["bewerk_bericht_met_cover", "edit_post_with_cover"] {
+        if ast.iter_functions().any(|f| f.name == hook3 && f.params.len() == 3) {
+            engine
+                .call_fn::<String>(
+                    &mut scope,
+                    &ast,
+                    hook3,
+                    (
+                        "Test tekst".to_string(),
+                        "/media/test.svg".to_string(),
+                        "Tutorials".to_string(),
+                    ),
+                )
+                .map_err(|e| {
+                    format!(
+                        "Plug-in crasht of overschrijdt de sandbox-limiet in '{}': {}",
+                        hook3, e
+                    )
+                })?;
+        }
+    }
+
+    Ok(())
+}
+
+// Hulpfunctie: Bouw het client-side BlogRust Shield script (Tabnabbing preventie, XSS-link blokkade & Anti-Spam Honeypot)
+fn maak_security_shield_script() -> String {
+    r#"<script>
+    (function() {
+        function activeerSecurityShield() {
+            // 1. Beveilig alle externe links tegen Tabnabbing (rel='noopener noreferrer') en blokkeer javascript: links
+            document.querySelectorAll('a[href]').forEach(a => {
+                const href = (a.getAttribute('href') || '').trim();
+                if (/^javascript:/i.test(href) || /^data:text\/html/i.test(href)) {
+                    a.setAttribute('href', '#blocked-by-blogrust-shield');
+                } else if (/^https?:\/\//i.test(href) && !href.includes(location.hostname)) {
+                    a.setAttribute('rel', 'noopener noreferrer');
+                }
+            });
+
+            // 2. Anti-Spam Cooldown & Honeypot bescherming op reactie- en uploadformulieren
+            document.querySelectorAll('form[method="post"]').forEach(form => {
+                if (form.hasAttribute('data-shield-ready')) return;
+                form.setAttribute('data-shield-ready', '1');
+                const hp = document.createElement('input');
+                hp.type = 'text';
+                hp.name = 'br_website_hp';
+                hp.tabIndex = -1;
+                hp.autocomplete = 'off';
+                hp.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;opacity:0;';
+                form.appendChild(hp);
+
+                form.addEventListener('submit', function(e) {
+                    if (hp.value && hp.value.trim() !== '') {
+                        e.preventDefault();
+                        alert('🛡️ BlogRust Shield: Automatische spam-bot gedetecteerd.');
+                    }
+                });
+            });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', activeerSecurityShield);
+        } else {
+            activeerSecurityShield();
+        }
+    })();
+    </script>"#
+    .to_string()
+}
+
+// Hulpfunctie: Voer actieve .rhai plug-ins in `plugins/` uit die een `bewerk_navigatie(nav_html)` hook hebben
+fn pas_navigatie_plugins_toe(plugins_map: &str, mut nav_html: String) -> String {
+    let engine = maak_veilige_rhai_engine();
 
     let mut script_paden = Vec::new();
     if let Ok(entries) = fs::read_dir(plugins_map) {
@@ -899,7 +1057,305 @@ fn pas_navigatie_plugins_toe(plugins_map: &str, mut nav_html: String) -> String 
         }
     }
 
+    if nav_html.contains("<!-- BLOGRUST_WYSIWYG_EDITOR -->") {
+        let editor_script = maak_wysiwyg_editor_script();
+        nav_html = nav_html.replace("<!-- BLOGRUST_WYSIWYG_EDITOR -->", &editor_script);
+    }
+
+    if nav_html.contains("<!-- BLOGRUST_SECURITY_SHIELD -->") {
+        let shield_script = maak_security_shield_script();
+        nav_html = nav_html.replace("<!-- BLOGRUST_SECURITY_SHIELD -->", &shield_script);
+    }
+
     nav_html
+}
+
+// Hulpfunctie: Bouw de WYSIWYG Markdown Toolbar + Photo & Video Embedder + Live Split-View voor /nieuw en /bewerk/{slug}
+fn maak_wysiwyg_editor_script() -> String {
+    r#"<script>
+    (function() {
+        function haalYoutubeIdUitUrl(u) {
+            if (!u) return null;
+            const m = u.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+            return m ? m[1] : null;
+        }
+
+        function zetVideoUrlOmNaarEmbedHtml(url) {
+            const u = (url || '').trim();
+            if (!u) return '';
+            const ytId = haalYoutubeIdUitUrl(u);
+            if (ytId) {
+                return "<div style='position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:10px;margin:16px 0;background:#0f172a;box-shadow:0 4px 14px rgba(0,0,0,0.12);'><iframe src='https://www.youtube-nocookie.com/embed/" + ytId + "?rel=0' title='YouTube video player' style='position:absolute;top:0;left:0;width:100%;height:100%;border:0;' allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share' referrerpolicy='strict-origin-when-cross-origin' allowfullscreen loading='lazy'></iframe></div>";
+            }
+            if (u.includes('vimeo.com/')) {
+                const m = u.match(/vimeo\.com\/([0-9]+)/);
+                if (m) {
+                    return "<div style='position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:10px;margin:16px 0;background:#0f172a;'><iframe src='https://player.vimeo.com/video/" + m[1] + "' style='position:absolute;top:0;left:0;width:100%;height:100%;border:0;' allowfullscreen loading='lazy'></iframe></div>";
+                }
+            }
+            return "<div style='margin:16px 0;'><video controls preload='metadata' style='width:100%;max-height:420px;border-radius:10px;background:#0f172a;display:block;'><source src='" + u + "'>Your browser does not support HTML5 video.</video></div>";
+        }
+
+        function renderLiveMarkdown(md) {
+            let html = (md || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            // Code blocks
+            html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function(_, lang, code) {
+                return "<pre style='background:#1e293b;color:#f8fafc;padding:14px;border-radius:6px;overflow-x:auto;'><code>" + code + "</code></pre>";
+            });
+            // Video embeds: [video](url)
+            html = html.replace(/\[video\]\(([^)]+)\)/gi, function(_, url) {
+                return zetVideoUrlOmNaarEmbedHtml(url);
+            });
+            // Images: ![alt](url)
+            html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_, alt, url) {
+                const cap = alt ? "<figcaption style='font-size:12px;color:#6b7280;text-align:center;margin-top:6px;'>" + alt + "</figcaption>" : "";
+                return "<figure style='margin:16px 0;text-align:center;'><img src='" + url + "' alt='" + alt + "' style='max-width:100%;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.08);'>" + cap + "</figure>";
+            });
+            // Links: [text](url)
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href='$2' target='_blank' style='color:#ea580c;'>$1</a>");
+            // Headings
+            html = html.replace(/^### (.*)$/gm, "<h3 style='margin:16px 0 8px 0;color:#111827;'>$1</h3>");
+            html = html.replace(/^## (.*)$/gm, "<h2 style='margin:20px 0 10px 0;color:#111827;border-bottom:1px solid #e5e7eb;padding-bottom:6px;'>$1</h2>");
+            html = html.replace(/^# (.*)$/gm, "<h1 style='margin:22px 0 12px 0;color:#111827;'>$1</h1>");
+            // Blockquotes
+            html = html.replace(/^&gt; (.*)$/gm, "<blockquote style='margin:12px 0;padding:10px 16px;border-left:4px solid #ea580c;background:#fff7ed;border-radius:4px;'>$1</blockquote>");
+            // Bold, Italic, Inline code
+            html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+            html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+            html = html.replace(/`([^`]+)`/g, "<code style='background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px;'>$1</code>");
+            // Lists
+            html = html.replace(/^- (.*)$/gm, "<li style='margin-left:20px;'>$1</li>");
+            // Paragraphs
+            html = html.replace(/\n\n+/g, "<br><br>");
+            return html;
+        }
+
+        function initWysiwygEditor() {
+            const veld = document.getElementById('inhoud');
+            if (!veld || document.getElementById('br-wysiwyg-wrap')) return;
+
+            // Verzamel beschikbare media-afbeeldingen van de pagina
+            const mediaPaden = ['/media/blogrust-banner.svg', '/media/blogrust-logo.svg', '/media/blogrust-icon.svg'];
+            document.querySelectorAll('.media-chip').forEach(btn => {
+                const oc = btn.getAttribute('onclick') || '';
+                const m = oc.match(/'(\/media\/[^']+)'/);
+                if (m && !mediaPaden.includes(m[1])) mediaPaden.push(m[1]);
+            });
+
+            const bar = document.createElement('div');
+            bar.id = 'br-wysiwyg-wrap';
+            bar.style.cssText = 'border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;padding:10px;margin-bottom:10px;';
+
+            let mediaOptiesHtml = mediaPaden.map(p => "<option value='" + p + "'>🖼️ " + p + "</option>").join('');
+
+            bar.innerHTML =
+                "<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;'>" +
+                    "<div style='display:flex;gap:4px;flex-wrap:wrap;align-items:center;'>" +
+                        "<span style='font-size:12px;font-weight:700;color:#ea580c;margin-right:4px;'>✨ WYSIWYG:</span>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('**','**','dikgedrukt')\" title='Bold'><strong>B</strong></button>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('*','*','cursief')\" title='Italic'><em>I</em></button>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('\\n## ','','Tussenkop')\">H2</button>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('\\n### ','','Subkop')\">H3</button>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('\\n- ','','Lijst item')\">• Lijst</button>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('\\n> ','','Citaat')\">❝ Quote</button>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('\\n```rust\\n','\\n```\\n','// code')\">💻 Code</button>" +
+                        "<button type='button' class='media-chip' onclick=\"window.brInsertMd('[','](https://blogrust.com)','Link tekst')\">🔗 Link</button>" +
+                        "<button type='button' class='media-chip' style='background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;font-weight:600;' onclick=\"window.brTogglePanel('br-photo-panel')\">🖼️ Photo Embed</button>" +
+                        "<button type='button' class='media-chip' style='background:#fff7ed;border-color:#fdba74;color:#c2410c;font-weight:600;' onclick=\"window.brTogglePanel('br-video-panel')\">🎬 Video Embed</button>" +
+                    "</div>" +
+                    "<div style='display:flex;gap:4px;'>" +
+                        "<button type='button' id='br-mode-split' class='media-chip' style='background:#ea580c;color:#fff;border-color:#ea580c;' onclick=\"window.brSetMode('split')\">📐 Split-View</button>" +
+                        "<button type='button' id='br-mode-edit' class='media-chip' onclick=\"window.brSetMode('edit')\">✍️ Markdown</button>" +
+                        "<button type='button' id='br-mode-prev' class='media-chip' onclick=\"window.brSetMode('preview')\">👁️ WYSIWYG Preview</button>" +
+                    "</div>" +
+                "</div>" +
+                "<div id='br-photo-panel' style='display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:10px;margin-bottom:8px;'>" +
+                    "<div style='font-size:12px;font-weight:700;color:#1e3a8a;margin-bottom:6px;'>🖼️ Foto Invoegen (uit Media Bibliotheek of URL):</div>" +
+                    "<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;'>" +
+                        "<select id='br-photo-select' onchange=\"document.getElementById('br-photo-url').value=this.value\" style='padding:6px 8px;border:1px solid #93c5fd;border-radius:4px;font-size:12px;'>" +
+                            "<option value=''>-- Kies uit /media/ --</option>" + mediaOptiesHtml +
+                        "</select>" +
+                        "<input type='text' id='br-photo-url' placeholder='/media/blogrust-banner.svg of https://...' value='/media/blogrust-banner.svg' style='flex:1;min-width:180px;padding:6px 8px;border:1px solid #93c5fd;border-radius:4px;font-size:12px;'>" +
+                        "<input type='text' id='br-photo-alt' placeholder='Bijschrift (optioneel)' value='BlogRust Screenshot' style='width:160px;padding:6px 8px;border:1px solid #93c5fd;border-radius:4px;font-size:12px;'>" +
+                        "<button type='button' class='media-chip' style='background:#2563eb;color:#fff;border-color:#1d4ed8;font-weight:600;' onclick='window.brInsertPhoto()'>➕ Voeg Foto Toe</button>" +
+                    "</div>" +
+                "</div>" +
+                "<div id='br-video-panel' style='display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:10px;margin-bottom:8px;'>" +
+                    "<div style='font-size:12px;font-weight:700;color:#9a3412;margin-bottom:6px;'>🎬 Video Embed Invoegen (YouTube, Vimeo of .mp4 URL):</div>" +
+                    "<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;'>" +
+                        "<input type='text' id='br-video-url' placeholder='Bijv. https://www.youtube.com/watch?v=aqz-KE-bpKQ of https://.../video.mp4' value='https://www.youtube.com/watch?v=aqz-KE-bpKQ' style='flex:1;min-width:240px;padding:6px 8px;border:1px solid #fdba74;border-radius:4px;font-size:12px;'>" +
+                        "<button type='button' class='media-chip' style='background:#ea580c;color:#fff;border-color:#c2410c;font-weight:600;' onclick='window.brInsertVideo()'>➕ Voeg Video Embed Toe</button>" +
+                    "</div>" +
+                "</div>";
+
+            veld.parentNode.insertBefore(bar, veld);
+
+            // Maak Split-View container rondom textarea + live preview
+            const splitGrid = document.createElement('div');
+            splitGrid.id = 'br-split-grid';
+            splitGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch;';
+            veld.parentNode.insertBefore(splitGrid, veld);
+            veld.style.margin = '0';
+            veld.style.minHeight = '320px';
+            splitGrid.appendChild(veld);
+
+            const prevBox = document.createElement('div');
+            prevBox.id = 'br-live-preview';
+            prevBox.style.cssText = 'border:1px solid #d1d5db;border-radius:6px;padding:14px 18px;background:#fff;overflow-y:auto;max-height:460px;min-height:320px;line-height:1.65;font-size:14px;';
+            splitGrid.appendChild(prevBox);
+
+            function syncPreview() {
+                prevBox.innerHTML = "<div style='font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;margin-bottom:8px;border-bottom:1px dashed #e5e7eb;padding-bottom:4px;'>👁️ Live WYSIWYG Preview (Photo &amp; Video Embeds)</div>" + renderLiveMarkdown(veld.value);
+            }
+
+            veld.addEventListener('input', syncPreview);
+            syncPreview();
+
+            window.brInsertMd = function(voor, na, standaard) {
+                const start = veld.selectionStart || 0;
+                const end = veld.selectionEnd || 0;
+                const geselecteerd = veld.value.substring(start, end) || standaard;
+                const vervanging = voor + geselecteerd + na;
+                veld.value = veld.value.substring(0, start) + vervanging + veld.value.substring(end);
+                veld.focus();
+                veld.selectionStart = start + voor.length;
+                veld.selectionEnd = start + voor.length + geselecteerd.length;
+                syncPreview();
+            };
+
+            window.brTogglePanel = function(id) {
+                const el = document.getElementById(id);
+                if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+            };
+
+            window.brInsertPhoto = function() {
+                const url = (document.getElementById('br-photo-url').value || '/media/blogrust-banner.svg').trim();
+                const alt = (document.getElementById('br-photo-alt').value || 'Foto').trim();
+                window.brInsertMd('\n![' + alt + '](' + url + ')\n', '', '');
+                document.getElementById('br-photo-panel').style.display = 'none';
+            };
+
+            window.brInsertVideo = function() {
+                const url = (document.getElementById('br-video-url').value || 'https://www.youtube.com/watch?v=aqz-KE-bpKQ').trim();
+                window.brInsertMd('\n[video](' + url + ')\n', '', '');
+                document.getElementById('br-video-panel').style.display = 'none';
+            };
+
+            window.brSetMode = function(mode) {
+                const btnSplit = document.getElementById('br-mode-split');
+                const btnEdit = document.getElementById('br-mode-edit');
+                const btnPrev = document.getElementById('br-mode-prev');
+                [btnSplit, btnEdit, btnPrev].forEach(b => {
+                    if (b) { b.style.background = '#f3f4f6'; b.style.color = '#1f2937'; b.style.borderColor = '#d1d5db'; }
+                });
+                if (mode === 'edit') {
+                    veld.style.display = 'block';
+                    prevBox.style.display = 'none';
+                    splitGrid.style.gridTemplateColumns = '1fr';
+                    if (btnEdit) { btnEdit.style.background = '#ea580c'; btnEdit.style.color = '#fff'; }
+                } else if (mode === 'preview') {
+                    veld.style.display = 'none';
+                    prevBox.style.display = 'block';
+                    splitGrid.style.gridTemplateColumns = '1fr';
+                    if (btnPrev) { btnPrev.style.background = '#ea580c'; btnPrev.style.color = '#fff'; }
+                } else {
+                    veld.style.display = 'block';
+                    prevBox.style.display = 'block';
+                    splitGrid.style.gridTemplateColumns = '1fr 1fr';
+                    if (btnSplit) { btnSplit.style.background = '#ea580c'; btnSplit.style.color = '#fff'; }
+                }
+                syncPreview();
+            };
+
+            // Zorg dat ook de Scaffold-knoppen de live preview verversen
+            document.querySelectorAll('.media-chip').forEach(b => {
+                b.addEventListener('click', () => setTimeout(syncPreview, 20));
+            });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initWysiwygEditor);
+        } else {
+            initWysiwygEditor();
+        }
+    })();
+    </script>"#
+    .to_string()
+}
+
+// Hulpfunctie: Zet `[video](url)` links en foto's in een geopend artikel om naar responsive Video Players & Photo Lightbox
+fn maak_wysiwyg_embeds_script() -> String {
+    r#"<script>
+    (function() {
+        function activeerArticleEmbeds() {
+            const content = document.querySelector('.content');
+            if (!content) return;
+
+            // 1. Zet <a href="...">video</a> of YouTube/Vimeo/MP4 links om in responsive 16:9 videospelers
+            content.querySelectorAll('a').forEach(link => {
+                const label = (link.textContent || '').trim().toLowerCase();
+                const href = (link.getAttribute('href') || '').trim();
+                const isVideoTag = (label === 'video' || label === 'embed' || label === '🎬 video');
+                const isDirectVideo = /\.(mp4|webm|ogg)$/i.test(href);
+                if (!isVideoTag && !isDirectVideo) return;
+
+                let spelerHtml = '';
+                const ytMatch = href.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+                const ytId = ytMatch ? ytMatch[1] : null;
+
+                if (ytId) {
+                    spelerHtml = "<div style='position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:10px;margin:20px 0;background:#0f172a;box-shadow:0 4px 16px rgba(0,0,0,0.12);'><iframe src='https://www.youtube-nocookie.com/embed/" + ytId + "?rel=0' title='YouTube video player' style='position:absolute;top:0;left:0;width:100%;height:100%;border:0;' allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share' referrerpolicy='strict-origin-when-cross-origin' allowfullscreen loading='lazy'></iframe></div>";
+                } else if (href.includes('vimeo.com/')) {
+                    const m = href.match(/vimeo\.com\/([0-9]+)/);
+                    if (m) {
+                        spelerHtml = "<div style='position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:10px;margin:20px 0;background:#0f172a;'><iframe src='https://player.vimeo.com/video/" + m[1] + "' style='position:absolute;top:0;left:0;width:100%;height:100%;border:0;' allowfullscreen loading='lazy'></iframe></div>";
+                    }
+                } else {
+                    spelerHtml = "<div style='margin:20px 0;'><video controls preload='metadata' style='width:100%;max-height:480px;border-radius:10px;background:#0f172a;display:block;box-shadow:0 4px 16px rgba(0,0,0,0.12);'><source src='" + href + "'></video></div>";
+                }
+
+                if (spelerHtml) {
+                    const wrap = document.createElement('div');
+                    wrap.innerHTML = spelerHtml;
+                    link.replaceWith(wrap);
+                }
+            });
+
+            // 2. Photo Embeds: geef foto's in het artikel een bijschrift + klikbare Lightbox zoom
+            content.querySelectorAll('img:not(.plugin-cover)').forEach(img => {
+                img.style.cursor = 'zoom-in';
+                img.style.transition = 'transform 0.15s';
+                img.onclick = () => {
+                    const overlay = document.createElement('div');
+                    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.88);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;';
+                    const bigImg = document.createElement('img');
+                    bigImg.src = img.src;
+                    bigImg.style.cssText = 'max-width:92vw;max-height:82vh;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.5);';
+                    overlay.appendChild(bigImg);
+                    if (img.alt) {
+                        const cap = document.createElement('div');
+                        cap.textContent = img.alt;
+                        cap.style.cssText = 'color:#f8fafc;margin-top:12px;font-size:14px;font-weight:500;';
+                        overlay.appendChild(cap);
+                    }
+                    overlay.onclick = () => overlay.remove();
+                    document.body.appendChild(overlay);
+                };
+            });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', activeerArticleEmbeds);
+        } else {
+            activeerArticleEmbeds();
+        }
+    })();
+    </script>"#
+    .to_string()
 }
 
 // Hulpfunctie: Bouw de knoppen rechtsboven in de navigatiebalk (BlogRust.org Portal)
@@ -1039,11 +1495,7 @@ fn markdown_naar_html(md: &str) -> String {
 
 // Hulpfunctie: Voer alle actieve .rhai plug-ins in `plugins/` uit op een post!
 fn pas_plugins_toe_op_post(plugins_map: &str, mut post: MarkdownPost) -> MarkdownPost {
-    let mut engine = Engine::new();
-    // Geef Rhai plug-ins toegang tot variabelen uit .env via env("SLEUTEL")
-    engine.register_fn("env", |sleutel: &str| -> String {
-        haal_env_waarde(sleutel).unwrap_or_default()
-    });
+    let engine = maak_veilige_rhai_engine();
 
     let mut script_paden = Vec::new();
     if let Ok(entries) = fs::read_dir(plugins_map) {
@@ -1093,6 +1545,13 @@ fn pas_plugins_toe_op_post(plugins_map: &str, mut post: MarkdownPost) -> Markdow
                 }
             }
         }
+    }
+
+    if post.html_inhoud.contains("<!-- BLOGRUST_WYSIWYG_EMBEDS -->") {
+        let embed_script = maak_wysiwyg_embeds_script();
+        post.html_inhoud = post
+            .html_inhoud
+            .replace("<!-- BLOGRUST_WYSIWYG_EMBEDS -->", &embed_script);
     }
 
     post
@@ -2316,7 +2775,7 @@ async fn themes_pagina(
                     <label style="font-weight:600;font-size:14px;display:block;margin-bottom:6px;">Bestandsnaam (bijv. <code>oceaan.css</code>)</label>
                     <input type="text" name="naam" placeholder="oceaan.css" required>
                     <label style="font-weight:600;font-size:14px;display:block;margin-bottom:6px;">CSS Thema Code (Scaffold)</label>
-                    <textarea name="css" required>{theme_scaffold}</textarea>
+                    <textarea name="css" translate="no" class="notranslate" spellcheck="false" required>{theme_scaffold}</textarea>
                     <button type="submit" class="btn-install">💾 Thema Publiceren in themes/</button>
                 </form>
             </section>
@@ -2815,6 +3274,37 @@ fn bewerk_navigatie(nav_html) {
 }
 "#,
         ),
+        (
+            "wysiwyg.rhai",
+            "✨ WYSIWYG Markdown Editor + Photo & Video Embed",
+            "Voegt een visuele WYSIWYG-knoppenbalk met Live Split-View toe aan de editor (/nieuw & /bewerk) én ondersteunt YouTube, Vimeo, MP4 video-embeds en Photo Lightbox in artikelen.",
+            r#"// ✨ WYSIWYG Markdown Editor + Photo & Video Embed Plug-in voor BlogRust
+fn bewerk_navigatie(nav_html) {
+    return nav_html + "\n<!-- BLOGRUST_WYSIWYG_EDITOR -->";
+}
+
+fn bewerk_bericht(tekst) {
+    return tekst + "\n<!-- BLOGRUST_WYSIWYG_EMBEDS -->";
+}
+"#,
+        ),
+        (
+            "security.rhai",
+            "🛡️ BlogRust Shield (Anti-Crash, Anti-XSS & Anti-Spam)",
+            "Beschermt artikelen, reacties en formulieren tegen XSS, Tabnabbing en Spam-bots, ondersteund door de Rhai Anti-Crash Sandbox (max 50.000 ops & 256KB RAM-limiet).",
+            r#"// 🛡️ BlogRust Shield — Beveiligings-, Anti-Spam & Anti-Crash Plug-in
+fn bewerk_navigatie(nav_html) {
+    return nav_html + "\n<!-- BLOGRUST_SECURITY_SHIELD -->";
+}
+
+fn bewerk_bericht(tekst) {
+    let veilig = tekst
+        .replace("javascript:", "geblokkeerd:")
+        .replace("data:text/html", "geblokkeerd:");
+    return veilig;
+}
+"#,
+        ),
     ]
 }
 
@@ -3004,7 +3494,7 @@ async fn plugins_pagina(
                     <label style="font-weight:600;font-size:14px;display:block;margin-bottom:6px;">Bestandsnaam (bijv. <code>mijn_plugin.rhai</code>)</label>
                     <input type="text" name="naam" placeholder="mijn_plugin.rhai" required>
                     <label style="font-weight:600;font-size:14px;display:block;margin-bottom:6px;">Rhai Script Code (Scaffold)</label>
-                    <textarea name="code" required>{plugin_scaffold}</textarea>
+                    <textarea name="code" translate="no" class="notranslate" spellcheck="false" required>{plugin_scaffold}</textarea>
                     <button type="submit" class="btn-install">💾 Plug-in Publiceren in plugins/</button>
                 </form>
             </section>
@@ -3195,23 +3685,55 @@ async fn verwerk_plugin_actie(
             if !eind_naam.ends_with(".rhai") {
                 eind_naam.push_str(".rhai");
             }
-            if let Some(code) = form.code {
-                let eind_code = if let Some(ref email) = google_user {
+            if let Some(ruwe_code) = form.code {
+                let code = herstel_vertaalde_rhai_code(&ruwe_code);
+                // 🛡️ Beveiligings- & Anti-Crash Scan vóórdat de plug-in opgeslagen mag worden!
+                if let Err(fout_reden) = valideer_veilige_plugin_code(&code) {
+                    let veilige_melding = fout_reden.replace(' ', "+");
+                    return Redirect::to(&format!(
+                        "/plugins?melding=🛡️+GEWEIGERD+door+BlogRust+Shield:+{}",
+                        veilige_melding
+                    ))
+                    .into_response();
+                }
+
+                // Als een community-gebruiker (via Google Auth, niet Admin) een plug-in indient:
+                // sla hem op als `.rhai.uit` zodat hij wél in de directory te downloaden is, maar pas op jouw site draait na Admin-goedkeuring!
+                let (doel_bestandsnaam, eind_code, melding_tekst) = if let Some(ref email) = google_user {
                     if admin.is_none() {
-                        format!("// Community Plug-in door (Google Auth): {}\n{}", email, code)
+                        (
+                            format!("{}.uit", eind_naam),
+                            format!("// Community Plug-in door (Google Auth): {}\n{}", email, code),
+                            format!(
+                                "🛡️+Community+plug-in+{}+is+gecontroleerd+op+crashes+en+gepubliceerd+als+download+(wacht+op+Admin-activatie)!",
+                                eind_naam
+                            ),
+                        )
                     } else {
-                        code
+                        (
+                            eind_naam.clone(),
+                            code,
+                            format!(
+                                "🛡️+Plug-in+{}+gescand+door+BlogRust+Shield+en+geactiveerd+in+plugins/!",
+                                eind_naam
+                            ),
+                        )
                     }
                 } else {
-                    code
+                    (
+                        eind_naam.clone(),
+                        code,
+                        format!(
+                            "🛡️+Plug-in+{}+gescand+door+BlogRust+Shield+en+geactiveerd+in+plugins/!",
+                            eind_naam
+                        ),
+                    )
                 };
-                let pad = format!("{}/{}", state.plugins_map, eind_naam);
+
+                let pad = format!("{}/{}", state.plugins_map, doel_bestandsnaam);
                 fs::write(pad, eind_code).unwrap();
-                return Redirect::to(&format!(
-                    "/plugins?melding=Community+plug-in+{}+gepubliceerd+in+plugins/",
-                    eind_naam
-                ))
-                .into_response();
+                return Redirect::to(&format!("/plugins?melding={}", melding_tekst))
+                    .into_response();
             }
         }
         _ => {}
@@ -5388,6 +5910,25 @@ let google_gebruiker: Option<String> = None;"#;
         let nav_html = maak_nav_rechts_html(None);
         assert!(nav_html.contains("blogrust-lang-switcher"));
         assert!(nav_html.contains("🇬🇧 EN"));
+    }
+
+    #[test]
+    fn test_security_sandbox_blokkeert_crash_plugin() {
+        // 1. Goede plug-in moet slagen
+        let goede_code = r#"fn bewerk_bericht(tekst) { return tekst + "!"; }"#;
+        assert!(valideer_veilige_plugin_code(goede_code).is_ok());
+
+        // 2. Oneindige lus (while true) crash-aanval moet direct door de sandbox geblokkeerd worden
+        let oneindige_lus = r#"fn bewerk_bericht(tekst) { while true {} return tekst; }"#;
+        assert!(valideer_veilige_plugin_code(oneindige_lus).is_err());
+
+        // 3. Geheugen-bom (RAM uitputting door verdubbelende string) moet geblokkeerd worden
+        let geheugen_bom = r#"fn bewerk_bericht(tekst) { let s = "aaaaaaaa"; loop { s += s; } }"#;
+        assert!(valideer_veilige_plugin_code(geheugen_bom).is_err());
+
+        // 4. Cookie-diefstal / XSS moet geblokkeerd worden
+        let xss_code = r#"fn bewerk_bericht(tekst) { return tekst + document.cookie; }"#;
+        assert!(valideer_veilige_plugin_code(xss_code).is_err());
     }
 
     #[tokio::test]
