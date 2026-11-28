@@ -1,0 +1,41 @@
+/* 🌬️ Tailwind CSS Thema gegenereerd met BlogRust Tailwind Builder */
+
+/* Tailwind Component: bg-sky-50 text-sky-950 font-sans */
+body {
+    background: #f0f9ff !important; color: #082f49 !important; font-family: system-ui, sans-serif !important;
+}
+
+/* Tailwind Component: bg-white border-slate-200 rounded-xl shadow-sm */
+.topbar {
+    background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
+}
+
+/* Tailwind Component: text-sky-500 font-extrabold */
+.brand, .hero h1, .read-more, .back-link {
+    color: #0ea5e9 !important;
+}
+
+/* Tailwind Component: bg-gradient-to-r from-sky-100 to-blue-50 border-sky-200 rounded-2xl */
+.hero {
+    background: linear-gradient(135deg, #e0f2fe, #eff6ff) !important; border: 1px solid #bae6fd !important; border-radius: 16px !important;
+}
+
+/* Tailwind Component: bg-white border-slate-200 rounded-xl shadow-sm */
+.post-card, .card, .store-card, .dl-box {
+    background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #1e293b !important;
+}
+
+/* Tailwind Component: bg-white border-slate-200 rounded-xl shadow-sm */
+.article-box {
+    background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #1e293b !important;
+}
+
+/* Tailwind Component: bg-sky-600 text-white rounded-lg shadow-sm */
+.btn-new, .cat-pill.actief, .btn-install, .dl-btn {
+    background: #0284c7 !important; border-color: #0369a1 !important; color: #ffffff !important; border-radius: 8px !important;
+}
+
+/* Tailwind Component: bg-sky-100 text-sky-800 border-sky-300 rounded-full */
+.cat-badge, .tag {
+    background: #e0f2fe !important; color: #075985 !important; border: 1px solid #7dd3fc !important; border-radius: 9999px !important;
+}

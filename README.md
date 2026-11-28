@@ -48,7 +48,7 @@ fn on_post_render(post) {
 
 ```bash
 # Clone the repository
-git clone https://github.com
+git clone https://github.com/camhide1-code/blogrust-cms.git
 cd blogrust
 
 # Run Blogrust (includes built-in Markdown docs as starter posts)

@@ -227,6 +227,12 @@ struct DotEnvForm {
 }
 
 #[derive(Deserialize, Default)]
+struct CoverSvgQuery {
+    titel: Option<String>,
+    sub: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 struct MeldingQuery {
     opgeslagen: Option<String>,
     docker_klaar: Option<String>,
@@ -287,7 +293,11 @@ async fn main() {
         .route("/media", get(media_pagina).post(verwerk_media_upload))
         .route("/media/verwijder", post(verwerk_media_verwijder))
         .route("/media/{bestandsnaam}", get(serveer_media_bestand))
+        .route("/cover.svg", get(serveer_dynamische_cover_svg))
         .route("/favicon.ico", get(serveer_favicon))
+        .route("/sitemap.xml", get(serveer_sitemap_xml))
+        .route("/robots.txt", get(serveer_robots_txt))
+        .route("/rss.xml", get(serveer_rss_xml))
         .route("/setup", get(setup_formulier).post(verwerk_setup))
         .route("/login", get(login_formulier).post(verwerk_login))
         .route("/logout", post(verwerk_logout).get(verwerk_logout))
@@ -1067,7 +1077,357 @@ fn pas_navigatie_plugins_toe(plugins_map: &str, mut nav_html: String) -> String 
         nav_html = nav_html.replace("<!-- BLOGRUST_SECURITY_SHIELD -->", &shield_script);
     }
 
+    if nav_html.contains("<!-- BLOGRUST_TAILWIND_BUILDER -->") {
+        let tw_script = maak_tailwind_builder_script();
+        nav_html = nav_html.replace("<!-- BLOGRUST_TAILWIND_BUILDER -->", &tw_script);
+    }
+
+    if nav_html.contains("<!-- BLOGRUST_SEO_GLOBAL -->") {
+        let seo_script = maak_seo_global_script();
+        nav_html = nav_html.replace("<!-- BLOGRUST_SEO_GLOBAL -->", &seo_script);
+    }
+
     nav_html
+}
+
+// Hulpfunctie: Bouw het globale SEO & Zoekmachine / Social Media script (via plugins/seo.rhai)
+fn maak_seo_global_script() -> String {
+    r#"<script>
+    (function() {
+        function activeerGlobalSeo() {
+            const paginaTitel = document.title || 'BlogRust CMS';
+            const eersteP = document.querySelector('.summary, .content p, .hero p');
+            const beschrijving = eersteP ? (eersteP.textContent || '').trim().slice(0, 160) : 'Fast, modular Rust CMS with Markdown & Rhai Plugins.';
+            const eersteImg = document.querySelector('.plugin-cover, .card-cover, .content img');
+            const imgUrl = eersteImg ? eersteImg.src : (location.origin + '/media/blogrust-banner.svg');
+
+            // 1. Voeg OpenGraph (LinkedIn/Facebook/WhatsApp/Discord), X/Twitter Cards, RSS & Canonical tags toe aan <head>
+            const metaTags = [
+                ['property', 'og:title', paginaTitel],
+                ['property', 'og:description', beschrijving],
+                ['property', 'og:image', imgUrl],
+                ['property', 'og:url', location.href],
+                ['property', 'og:type', location.pathname.startsWith('/post/') ? 'article' : 'website'],
+                ['name', 'twitter:card', 'summary_large_image'],
+                ['name', 'twitter:title', paginaTitel],
+                ['name', 'twitter:description', beschrijving],
+                ['name', 'twitter:image', imgUrl],
+                ['name', 'description', beschrijving]
+            ];
+            metaTags.forEach(([attr, key, val]) => {
+                if (!document.querySelector('meta[' + attr + '="' + key + '"]')) {
+                    const m = document.createElement('meta');
+                    m.setAttribute(attr, key);
+                    m.setAttribute('content', val);
+                    document.head.appendChild(m);
+                }
+            });
+
+            if (!document.querySelector('link[rel="alternate"][type="application/rss+xml"]')) {
+                const rss = document.createElement('link');
+                rss.rel = 'alternate';
+                rss.type = 'application/rss+xml';
+                rss.title = 'BlogRust RSS Feed';
+                rss.href = '/rss.xml';
+                document.head.appendChild(rss);
+            }
+
+            // 2. Voeg Schema.org JSON-LD Structured Data toe voor Google Rich Snippets
+            if (!document.getElementById('br-seo-jsonld')) {
+                const ld = document.createElement('script');
+                ld.id = 'br-seo-jsonld';
+                ld.type = 'application/ld+json';
+                ld.textContent = JSON.stringify({
+                    '@context': 'https://schema.org',
+                    '@type': location.pathname.startsWith('/post/') ? 'BlogPosting' : 'WebSite',
+                    'headline': paginaTitel,
+                    'description': beschrijving,
+                    'image': imgUrl,
+                    'url': location.href
+                });
+                document.head.appendChild(ld);
+            }
+
+            // 3. Op /nieuw en /bewerk: Toon Live Google SERP Preview + Zoekmachine Aanmeldbalk
+            const samenvattingInput = document.getElementById('samenvatting');
+            const titelInput = document.getElementById('titel');
+            if (samenvattingInput && titelInput && !document.getElementById('br-seo-serp-box')) {
+                const serp = document.createElement('div');
+                serp.id = 'br-seo-serp-box';
+                serp.style.cssText = 'margin-top:10px;padding:14px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;';
+                serp.innerHTML =
+                    "<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;'>" +
+                        "<div style='font-size:12px;font-weight:700;color:#166534;'>🔍 Live Google Zoekresultaat &amp; Social Media Preview (via <code>plugins/seo.rhai</code>):</div>" +
+                        "<div style='display:flex;gap:6px;flex-wrap:wrap;'>" +
+                            "<a href='/sitemap.xml' target='_blank' style='font-size:11px;color:#15803d;font-weight:600;text-decoration:none;background:#dcfce7;padding:3px 8px;border-radius:4px;'>🗺️ /sitemap.xml</a>" +
+                            "<a href='/rss.xml' target='_blank' style='font-size:11px;color:#15803d;font-weight:600;text-decoration:none;background:#dcfce7;padding:3px 8px;border-radius:4px;'>📡 /rss.xml</a>" +
+                            "<a href='https://search.google.com/search-console' target='_blank' rel='noopener noreferrer' style='font-size:11px;color:#1d4ed8;font-weight:600;text-decoration:none;background:#dbeafe;padding:3px 8px;border-radius:4px;'>🚀 Google Search Console</a>" +
+                            "<a href='https://www.bing.com/webmasters' target='_blank' rel='noopener noreferrer' style='font-size:11px;color:#1d4ed8;font-weight:600;text-decoration:none;background:#dbeafe;padding:3px 8px;border-radius:4px;'>🌐 Bing Webmasters</a>" +
+                        "</div>" +
+                    "</div>" +
+                    "<div style='background:#fff;padding:12px 14px;border-radius:6px;border:1px solid #dcfce7;font-family:arial,sans-serif;'>" +
+                        "<div id='br-serp-url' style='font-size:12px;color:#202124;margin-bottom:2px;'>" + location.origin + " › post › ...</div>" +
+                        "<div id='br-serp-title' style='font-size:18px;color:#1a0dab;font-weight:400;margin-bottom:4px;cursor:pointer;'>Artikel Titel — BlogRust</div>" +
+                        "<div id='br-serp-desc' style='font-size:13px;color:#4d5156;line-height:1.4;'>Vul een korte samenvatting in voor een optimale weergave in Google en op Social Media...</div>" +
+                    "</div>";
+                samenvattingInput.parentNode.appendChild(serp);
+
+                function updateSerp() {
+                    const t = titelInput.value.trim() || 'Nieuw Artikel';
+                    const s = samenvattingInput.value.trim() || 'Lees dit artikel op BlogRust...';
+                    const slug = t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'artikel';
+                    document.getElementById('br-serp-url').textContent = location.origin + ' › post › ' + slug;
+                    document.getElementById('br-serp-title').textContent = t + ' — BlogRust';
+                    document.getElementById('br-serp-desc').textContent = s;
+                }
+                titelInput.addEventListener('input', updateSerp);
+                samenvattingInput.addEventListener('input', updateSerp);
+                updateSerp();
+            }
+
+            // 4. Op /instellingen: Toon een Zoekmachine & Social Media Indexatie Kaart
+            const instellingenMain = document.querySelector('main.card form[action="/instellingen"]');
+            if (instellingenMain && !document.getElementById('br-seo-settings-card')) {
+                const seoCard = document.createElement('section');
+                seoCard.id = 'br-seo-settings-card';
+                seoCard.className = 'card';
+                const sitemapUrl = location.origin + '/sitemap.xml';
+                seoCard.innerHTML =
+                    "<h2>🔍 Zoekmachines (Google &amp; Bing) &amp; Social Media Indexatie (<code>plugins/seo.rhai</code>)</h2>" +
+                    "<p style='font-size:14px;color:#4b5563;margin-top:0;'>Jouw website genereert automatisch een live XML-sitemap, Robots.txt en RSS-feed. Meld je sitemap hieronder met 1 klik aan bij zoekmachines en deel je site op social media:</p>" +
+                    "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;'>" +
+                        "<a href='/sitemap.xml' target='_blank' class='btn-link'>🗺️ Bekijk /sitemap.xml</a>" +
+                        "<a href='/robots.txt' target='_blank' class='btn-link'>🤖 Bekijk /robots.txt</a>" +
+                        "<a href='/rss.xml' target='_blank' class='btn-link'>📡 Bekijk /rss.xml (RSS Feed)</a>" +
+                    "</div>" +
+                    "<div style='display:flex;gap:8px;flex-wrap:wrap;'>" +
+                        "<a href='https://search.google.com/search-console/sitemaps' target='_blank' rel='noopener noreferrer' class='btn-save' style='text-decoration:none;display:inline-block;'>🚀 Aanmelden bij Google Search Console</a>" +
+                        "<a href='https://www.bing.com/webmasters' target='_blank' rel='noopener noreferrer' class='btn-docker' style='text-decoration:none;display:inline-block;'>🌐 Aanmelden bij Bing Webmaster Tools</a>" +
+                        "<button type='button' class='btn-env' onclick=\"navigator.clipboard.writeText('" + sitemapUrl + "');this.textContent='✅ Sitemap URL Gekopieerd!'\">📋 Kopieer Sitemap URL</button>" +
+                    "</div>";
+                instellingenMain.closest('main.card').insertAdjacentElement('afterend', seoCard);
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', activeerGlobalSeo);
+        } else {
+            activeerGlobalSeo();
+        }
+    })();
+    </script>"#
+    .to_string()
+}
+
+// Hulpfunctie: Bouw de Social Media Share & Zoekmachine Ping balk onder elk artikel (via plugins/seo.rhai)
+fn maak_seo_share_balk_script() -> String {
+    r#"<div id="br-seo-share-bar" style="margin-top:24px;padding:16px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+        <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:10px;">🚀 Deel &amp; Indexeer dit artikel op Social Media &amp; Zoekmachines:</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <a id="br-share-x" href="https://x.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;background:#0f172a;color:#fff;">𝕏 Post op X</a>
+            <a id="br-share-in" href="https://www.linkedin.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;background:#0a66c2;color:#fff;">in LinkedIn</a>
+            <a id="br-share-rd" href="https://www.reddit.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;background:#ea580c;color:#fff;">🤖 Reddit</a>
+            <a id="br-share-hn" href="https://news.ycombinator.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;background:#ff6600;color:#fff;">Y Hacker News</a>
+            <a id="br-share-wa" href="https://wa.me" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;background:#16a34a;color:#fff;">💬 WhatsApp</a>
+            <button type="button" onclick="navigator.clipboard.writeText(location.href);this.textContent='✅ Link Gekopieerd!'" style="font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;background:#fff;border:1px solid #cbd5e1;color:#334155;cursor:pointer;">📋 Kopieer Link</button>
+            <a href="/sitemap.xml" target="_blank" style="margin-left:auto;text-decoration:none;font-size:11px;font-weight:600;color:#64748b;">🗺️ Sitemap</a>
+            <a href="/rss.xml" target="_blank" style="text-decoration:none;font-size:11px;font-weight:600;color:#ea580c;">📡 RSS</a>
+        </div>
+    </div>
+    <script>
+    (function() {
+        const u = encodeURIComponent(location.href);
+        const t = encodeURIComponent(document.title || 'BlogRust');
+        const elX = document.getElementById('br-share-x');
+        const elIn = document.getElementById('br-share-in');
+        const elRd = document.getElementById('br-share-rd');
+        const elHn = document.getElementById('br-share-hn');
+        const elWa = document.getElementById('br-share-wa');
+        if (elX) elX.href = 'https://twitter.com/intent/tweet?url=' + u + '&text=' + t;
+        if (elIn) elIn.href = 'https://www.linkedin.com/sharing/share-offsite/?url=' + u;
+        if (elRd) elRd.href = 'https://www.reddit.com/submit?url=' + u + '&title=' + t;
+        if (elHn) elHn.href = 'https://news.ycombinator.com/submitlink?u=' + u + '&t=' + t;
+        if (elWa) elWa.href = 'https://wa.me/?text=' + t + '%20' + u;
+    })();
+    </script>"#
+    .to_string()
+}
+
+// Hulpfunctie: Bouw de Tailwind CSS Component Dropdown Builder op /themes
+fn maak_tailwind_builder_script() -> String {
+    r#"<script>
+    (function() {
+        const TW_CLASSES = [
+            {
+                selector: 'body',
+                label: '1. body (Pagina Achtergrond & Font)',
+                options: [
+                    { tw: 'bg-slate-50 text-slate-800 font-sans', naam: '🌤️ Slate-50 Light (Sans-Serif)', css: 'background: #f8fafc !important; color: #1e293b !important; font-family: system-ui, -apple-system, sans-serif !important;' },
+                    { tw: 'bg-slate-900 text-slate-100 font-sans', naam: '🌌 Slate-900 Dark Mode', css: 'background: #0f172a !important; color: #f1f5f9 !important; font-family: system-ui, -apple-system, sans-serif !important;' },
+                    { tw: 'bg-zinc-950 text-emerald-50 font-mono', naam: '💻 Zinc-950 Cyber Terminal (Mono)', css: 'background: #09090b !important; color: #ecfdf5 !important; font-family: ui-monospace, Consolas, monospace !important;' },
+                    { tw: 'bg-amber-50 text-stone-900 font-serif', naam: '📰 Amber-50 Editorial (Serif)', css: 'background: #fffbeb !important; color: #1c1917 !important; font-family: Georgia, Cambria, serif !important;' },
+                    { tw: 'bg-sky-50 text-sky-950 font-sans', naam: '🌊 Sky-50 Ocean Breeze', css: 'background: #f0f9ff !important; color: #082f49 !important; font-family: system-ui, sans-serif !important;' }
+                ]
+            },
+            {
+                selector: '.topbar',
+                label: '2. .topbar (Navigatiebalk Component)',
+                options: [
+                    { tw: 'bg-white border-slate-200 rounded-xl shadow-sm', naam: '⬜ White Floating Bar (rounded-xl shadow-sm)', css: 'background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;' },
+                    { tw: 'bg-slate-800 border-slate-700 rounded-2xl shadow-lg', naam: '🌑 Slate-800 Dark Glass (rounded-2xl shadow-lg)', css: 'background: #1e293b !important; border: 1px solid #334155 !important; border-radius: 16px !important; box-shadow: 0 10px 25px rgba(0,0,0,0.3) !important;' },
+                    { tw: 'bg-indigo-950 border-indigo-800 rounded-xl shadow-md', naam: '💎 Indigo-950 Deep Nav (rounded-xl)', css: 'background: #1e1b4b !important; border: 1px solid #3730a3 !important; border-radius: 12px !important; color: #e0e7ff !important;' },
+                    { tw: 'bg-zinc-900 border-emerald-500/40 rounded-lg', naam: '🟢 Zinc-900 Neon Border (border-emerald-500)', css: 'background: #18181b !important; border: 1px solid #10b981 !important; border-radius: 8px !important;' },
+                    { tw: 'bg-amber-100 border-amber-300 rounded-none', naam: '📜 Amber-100 Classic Header (rounded-none)', css: 'background: #fef3c7 !important; border: 1px solid #fcd34d !important; border-radius: 0px !important;' }
+                ]
+            },
+            {
+                selector: '.brand, .hero h1, .read-more, .back-link',
+                label: '3. .brand & Links (Logo & Accentkleur)',
+                options: [
+                    { tw: 'text-orange-600 font-extrabold', naam: '🦀 Orange-600 Rust Brand', css: 'color: #ea580c !important;' },
+                    { tw: 'text-indigo-400 font-black', naam: '💎 Indigo-400 Electric', css: 'color: #818cf8 !important;' },
+                    { tw: 'text-emerald-400 font-bold', naam: '🌲 Emerald-400 Matrix Green', css: 'color: #34d399 !important;' },
+                    { tw: 'text-sky-500 font-extrabold', naam: '🌊 Sky-500 Ocean Cyan', css: 'color: #0ea5e9 !important;' },
+                    { tw: 'text-rose-500 font-black', naam: '🌹 Rose-500 Modern Pink', css: 'color: #f43f5e !important;' }
+                ]
+            },
+            {
+                selector: '.hero',
+                label: '4. .hero (Header Banner Component)',
+                options: [
+                    { tw: 'bg-white border-slate-200 rounded-xl shadow-sm', naam: '⬜ White Clean Hero (bg-white rounded-xl)', css: 'background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important;' },
+                    { tw: 'bg-gradient-to-r from-slate-800 to-indigo-950 border-indigo-800 rounded-2xl shadow-xl', naam: '🌌 Slate-to-Indigo Gradient Hero (rounded-2xl)', css: 'background: linear-gradient(135deg, #1e293b, #1e1b4b) !important; border: 1px solid #3730a3 !important; border-radius: 16px !important; color: #f8fafc !important;' },
+                    { tw: 'bg-slate-800 border-slate-700 rounded-2xl shadow-lg', naam: '🌑 Slate-800 Dark Hero', css: 'background: #1e293b !important; border: 1px solid #334155 !important; border-radius: 16px !important; color: #f1f5f9 !important;' },
+                    { tw: 'bg-gradient-to-r from-sky-100 to-blue-50 border-sky-200 rounded-2xl', naam: '🌊 Sky-100 Soft Gradient Hero', css: 'background: linear-gradient(135deg, #e0f2fe, #eff6ff) !important; border: 1px solid #bae6fd !important; border-radius: 16px !important;' }
+                ]
+            },
+            {
+                selector: '.post-card, .card, .store-card, .dl-box',
+                label: '5. .post-card & .card (Artikel Kaarten)',
+                options: [
+                    { tw: 'bg-white border-slate-200 rounded-xl shadow-sm', naam: '⬜ White Crisp Card (rounded-xl shadow-sm)', css: 'background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #1e293b !important;' },
+                    { tw: 'bg-slate-800 border-slate-700 rounded-2xl shadow-md', naam: '🌑 Slate-800 Dark Card (rounded-2xl)', css: 'background: #1e293b !important; border: 1px solid #334155 !important; border-radius: 16px !important; color: #f1f5f9 !important;' },
+                    { tw: 'bg-zinc-900 border-emerald-500/40 rounded-xl shadow-lg', naam: '🟢 Zinc-900 Matrix Card (border-emerald)', css: 'background: #18181b !important; border: 1px solid #059669 !important; border-radius: 12px !important; color: #ecfdf5 !important;' },
+                    { tw: 'bg-amber-50/80 border-amber-200 rounded-none', naam: '📰 Amber-50 Paper Card (rounded-none)', css: 'background: #fffbeb !important; border: 1px solid #fde68a !important; border-radius: 2px !important; color: #1c1917 !important;' }
+                ]
+            },
+            {
+                selector: '.article-box',
+                label: '6. .article-box (Artikel Leesvlak)',
+                options: [
+                    { tw: 'bg-white border-slate-200 rounded-xl shadow-sm', naam: '⬜ White Standard Reader (rounded-xl)', css: 'background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; color: #1e293b !important;' },
+                    { tw: 'bg-slate-800 border-slate-700 rounded-2xl shadow-xl', naam: '🌑 Slate-800 Dark Reader (rounded-2xl)', css: 'background: #1e293b !important; border: 1px solid #334155 !important; border-radius: 16px !important; color: #f1f5f9 !important;' },
+                    { tw: 'bg-zinc-900 border-emerald-600 rounded-xl', naam: '🟢 Zinc-900 Terminal Reader', css: 'background: #18181b !important; border: 1px solid #059669 !important; border-radius: 12px !important; color: #ecfdf5 !important;' }
+                ]
+            },
+            {
+                selector: '.btn-new, .cat-pill.actief, .btn-install, .dl-btn',
+                label: '7. .btn-new (Primaire Knoppen Component)',
+                options: [
+                    { tw: 'bg-orange-600 text-white rounded-md shadow-sm', naam: '🦀 Orange-600 Button (rounded-md)', css: 'background: #ea580c !important; border-color: #c2410c !important; color: #ffffff !important; border-radius: 6px !important;' },
+                    { tw: 'bg-indigo-600 text-white rounded-lg shadow-md', naam: '💎 Indigo-600 Modern Button (rounded-lg)', css: 'background: #4f46e5 !important; border-color: #4338ca !important; color: #ffffff !important; border-radius: 8px !important;' },
+                    { tw: 'bg-emerald-600 text-white rounded-full shadow-md', naam: '🌲 Emerald-600 Pill Button (rounded-full)', css: 'background: #059669 !important; border-color: #047857 !important; color: #ffffff !important; border-radius: 9999px !important;' },
+                    { tw: 'bg-sky-600 text-white rounded-lg shadow-sm', naam: '🌊 Sky-600 Ocean Button (rounded-lg)', css: 'background: #0284c7 !important; border-color: #0369a1 !important; color: #ffffff !important; border-radius: 8px !important;' },
+                    { tw: 'bg-rose-600 text-white rounded-lg shadow-md', naam: '🌹 Rose-600 Action Button (rounded-lg)', css: 'background: #e11d48 !important; border-color: #be123c !important; color: #ffffff !important; border-radius: 8px !important;' }
+                ]
+            },
+            {
+                selector: '.cat-badge, .tag',
+                label: '8. .cat-badge & .tag (Categorie & Tag Badges)',
+                options: [
+                    { tw: 'bg-orange-50 text-orange-700 border-orange-200 rounded', naam: '🦀 Orange-50 Soft Badge', css: 'background: #fff7ed !important; color: #c2410c !important; border: 1px solid #fed7aa !important; border-radius: 6px !important;' },
+                    { tw: 'bg-indigo-950 text-indigo-300 border-indigo-800 rounded-full', naam: '💎 Indigo-950 Dark Pill Badge (rounded-full)', css: 'background: #1e1b4b !important; color: #a5b4fc !important; border: 1px solid #3730a3 !important; border-radius: 9999px !important;' },
+                    { tw: 'bg-emerald-950 text-emerald-300 border-emerald-700 rounded', naam: '🌲 Emerald-950 Matrix Badge', css: 'background: #022c22 !important; color: #6ee7b7 !important; border: 1px solid #047857 !important; border-radius: 6px !important;' },
+                    { tw: 'bg-sky-100 text-sky-800 border-sky-300 rounded-full', naam: '🌊 Sky-100 Ocean Pill (rounded-full)', css: 'background: #e0f2fe !important; color: #075985 !important; border: 1px solid #7dd3fc !important; border-radius: 9999px !important;' }
+                ]
+            }
+        ];
+
+        function initTailwindThemeBuilder() {
+            const cssTextarea = document.querySelector('form[action="/themes"] textarea[name="css"]');
+            const naamInput = document.querySelector('form[action="/themes"] input[name="naam"]');
+            if (!cssTextarea || document.getElementById('br-tailwind-builder')) return;
+
+            const box = document.createElement('div');
+            box.id = 'br-tailwind-builder';
+            box.style.cssText = 'background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:18px 20px;margin-bottom:18px;';
+
+            let rowsHtml = '';
+            TW_CLASSES.forEach((groep, idx) => {
+                let opts = groep.options.map((o, oIdx) => "<option value='" + oIdx + "'>" + o.naam + " — [" + o.tw + "]</option>").join('');
+                rowsHtml +=
+                    "<div style='display:grid;grid-template-columns:1fr 2fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #e2e8f0;'>" +
+                        "<div style='font-size:13px;font-weight:600;color:#1e293b;'><code>" + groep.label + "</code></div>" +
+                        "<select class='br-tw-select' data-group='" + idx + "' onchange='window.brUpdateTailwindCss()' style='width:100%;padding:7px 10px;border:1px solid #94a3b8;border-radius:6px;font-size:13px;background:#fff;cursor:pointer;'>" +
+                            opts +
+                        "</select>" +
+                    "</div>";
+            });
+
+            box.innerHTML =
+                "<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #e2e8f0;'>" +
+                    "<div>" +
+                        "<h3 style='margin:0;font-size:16px;color:#0f172a;'>🌬️ Tailwind CSS Component Builder (via <code>plugins/tailwind.rhai</code>)</h3>" +
+                        "<div style='font-size:12px;color:#475569;margin-top:2px;'>Kies per BlogRust-class een Tailwind component uit het dropdown-menu. De CSS én een live voorbeeld worden direct bijgewerkt!</div>" +
+                    "</div>" +
+                    "<div style='display:flex;gap:6px;flex-wrap:wrap;'>" +
+                        "<button type='button' class='btn-sec' style='font-size:12px;padding:5px 10px;' onclick=\"window.brLoadTwPreset('indigo_dark', [1,2,1,1,1,1,1,1])\">💎 Indigo Dark Preset</button>" +
+                        "<button type='button' class='btn-sec' style='font-size:12px;padding:5px 10px;' onclick=\"window.brLoadTwPreset('cyber_emerald', [2,3,2,2,2,2,2,2])\">🌲 Cyber Emerald Preset</button>" +
+                        "<button type='button' class='btn-sec' style='font-size:12px;padding:5px 10px;' onclick=\"window.brLoadTwPreset('sky_ocean', [4,0,3,3,0,0,3,3])\">🌊 Sky Ocean Preset</button>" +
+                        "<button type='button' class='btn-sec' style='font-size:12px;padding:5px 10px;' onclick=\"window.brLoadTwPreset('amber_editorial', [3,4,0,0,3,0,0,0])\">📰 Amber Editorial</button>" +
+                    "</div>" +
+                "</div>" +
+                rowsHtml;
+
+            cssTextarea.parentNode.insertBefore(box, cssTextarea);
+
+            let liveStyleEl = document.getElementById('br-tw-live-style');
+            if (!liveStyleEl) {
+                liveStyleEl = document.createElement('style');
+                liveStyleEl.id = 'br-tw-live-style';
+                document.head.appendChild(liveStyleEl);
+            }
+
+            window.brUpdateTailwindCss = function() {
+                const selects = document.querySelectorAll('.br-tw-select');
+                let outCss = '/* 🌬️ Tailwind CSS Thema gegenereerd met BlogRust Tailwind Builder */\n';
+                let isDark = false;
+                selects.forEach(sel => {
+                    const gIdx = parseInt(sel.getAttribute('data-group'), 10);
+                    const oIdx = parseInt(sel.value, 10) || 0;
+                    const groep = TW_CLASSES[gIdx];
+                    const gekozen = groep.options[oIdx] || groep.options[0];
+                    if (gIdx === 0 && (oIdx === 1 || oIdx === 2)) isDark = true;
+                    outCss += '\n/* Tailwind Component: ' + gekozen.tw + ' */\n';
+                    outCss += groep.selector + ' {\n    ' + gekozen.css + '\n}\n';
+                });
+                if (isDark) {
+                    outCss += '\n/* Leesbare koppen & subteksten in Tailwind Dark Mode */\n';
+                    outCss += 'h1, h2, h3, .post-card h2 a, label { color: #f8fafc !important; }\n';
+                    outCss += 'p, .summary, .post-meta { color: #cbd5e1 !important; }\n';
+                }
+                cssTextarea.value = outCss;
+                liveStyleEl.textContent = outCss;
+            };
+
+            window.brLoadTwPreset = function(presetNaam, keuzes) {
+                const selects = document.querySelectorAll('.br-tw-select');
+                selects.forEach((sel, idx) => {
+                    if (keuzes[idx] !== undefined) sel.value = String(keuzes[idx]);
+                });
+                if (naamInput) naamInput.value = 'tailwind_' + presetNaam + '.css';
+                window.brUpdateTailwindCss();
+            };
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initTailwindThemeBuilder);
+        } else {
+            initTailwindThemeBuilder();
+        }
+    })();
+    </script>"#
+    .to_string()
 }
 
 // Hulpfunctie: Bouw de WYSIWYG Markdown Toolbar + Photo & Video Embedder + Live Split-View voor /nieuw en /bewerk/{slug}
@@ -1360,6 +1720,8 @@ fn maak_wysiwyg_embeds_script() -> String {
 
 // Hulpfunctie: Bouw de knoppen rechtsboven in de navigatiebalk (BlogRust.org Portal)
 fn maak_nav_rechts_html(ingelogde_gebruiker: Option<&str>) -> String {
+    let github_knop = r#"<a href="https://github.com/camhide1-code/blogrust-cms" target="_blank" rel="noopener noreferrer" class="github-portal-link" title="Bekijk BlogRust CMS op GitHub" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.18);transition:transform 0.15s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"><img src="/media/github-icon.svg" alt="GitHub" style="width:100%;height:100%;display:block;"></a>"#;
+
     let basis_nav = if let Some(gebruiker) = ingelogde_gebruiker {
         if let Some(google_email) = gebruiker.strip_prefix("google:") {
             format!(
@@ -1367,6 +1729,7 @@ fn maak_nav_rechts_html(ingelogde_gebruiker: Option<&str>) -> String {
                    <a href="/plugins" class="btn-link">🧩 Plug-ins (+ Toevoegen)</a>
                    <a href="/themes" class="btn-link">🎨 Thema's (+ Toevoegen)</a>
                    <a href="/download" class="btn-new">⬇️ Download BlogRust</a>
+                   {github_knop}
                    <a href="/logout" class="btn-logout">Uitloggen</a>"#
             )
         } else {
@@ -1378,16 +1741,19 @@ fn maak_nav_rechts_html(ingelogde_gebruiker: Option<&str>) -> String {
                    <a href="/themes" class="btn-link">🎨 Thema's</a>
                    <a href="/download" class="btn-link">⬇️ Download</a>
                    <a href="/instellingen" class="btn-link">⚙️ Instellingen</a>
+                   {github_knop}
                    <a href="/logout" class="btn-logout">Uitloggen</a>"#
             )
         }
     } else {
-        r#"<a href="/plugins" class="btn-link">🧩 Plug-ins</a>
-           <a href="/themes" class="btn-link">🎨 Thema's</a>
-           <a href="/download" class="btn-new">⬇️ Download BlogRust</a>
-           
-           <a href="/login" class="btn-login">🔑 Admin</a>"#
-            .to_string()
+        format!(
+            r#"<a href="/plugins" class="btn-link">🧩 Plug-ins</a>
+               <a href="/themes" class="btn-link">🎨 Thema's</a>
+               <a href="/download" class="btn-new">⬇️ Download BlogRust</a>
+               
+               {github_knop}
+               <a href="/login" class="btn-login">🔑 Admin</a>"#
+        )
     };
 
     pas_navigatie_plugins_toe("plugins", basis_nav)
@@ -1552,6 +1918,13 @@ fn pas_plugins_toe_op_post(plugins_map: &str, mut post: MarkdownPost) -> Markdow
         post.html_inhoud = post
             .html_inhoud
             .replace("<!-- BLOGRUST_WYSIWYG_EMBEDS -->", &embed_script);
+    }
+
+    if post.html_inhoud.contains("<!-- BLOGRUST_SEO_SHARE -->") {
+        let share_balk = maak_seo_share_balk_script();
+        post.html_inhoud = post
+            .html_inhoud
+            .replace("<!-- BLOGRUST_SEO_SHARE -->", &share_balk);
     }
 
     post
@@ -1765,6 +2138,50 @@ fn maak_brand_en_favicon_html(titel: &str, site_icoon: &str, site_logo: &str) ->
     (brand_html, favicon_html)
 }
 
+// Hulpfunctie: Genereer een dynamische Cover-Banner SVG op basis van tekst-input (zonder losse SVG-bestanden!)
+async fn serveer_dynamische_cover_svg(Query(q): Query<CoverSvgQuery>) -> impl IntoResponse {
+    let ruwe_titel = q
+        .titel
+        .unwrap_or_else(|| "🦀 BlogRust".to_string());
+    let ruwe_sub = q.sub.unwrap_or_else(|| {
+        "Fast, modular Rust CMS with Markdown & Rhai Plugins".to_string()
+    });
+
+    let veilige_titel = ruwe_titel
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;");
+    let veilige_sub = ruwe_sub
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;");
+
+    let svg = format!(
+        r#"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 320' width='800' height='320'>
+  <defs>
+    <linearGradient id='bg' x1='0%' y1='0%' x2='100%' y2='100%'>
+      <stop offset='0%' stop-color='#1f2937'/>
+      <stop offset='100%' stop-color='#ea580c'/>
+    </linearGradient>
+  </defs>
+  <rect width='800' height='320' fill='url(#bg)' rx='12'/>
+  <text x='50%' y='45%' dominant-baseline='middle' text-anchor='middle' fill='#ffffff' font-family='system-ui, sans-serif' font-size='40' font-weight='bold'>{titel}</text>
+  <text x='50%' y='65%' dominant-baseline='middle' text-anchor='middle' fill='#fed7aa' font-family='system-ui, sans-serif' font-size='20'>{sub}</text>
+</svg>"#,
+        titel = veilige_titel,
+        sub = veilige_sub
+    );
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("image/svg+xml; charset=utf-8"),
+    );
+    (StatusCode::OK, headers, svg).into_response()
+}
+
 async fn serveer_favicon(State(state): State<AppState>) -> impl IntoResponse {
     let icoon = if is_geinstalleerd(&state.db_pad) {
         let (site_icoon, _, _, _) = haal_site_branding_op(&state.db_pad, "BlogRust").await;
@@ -1788,6 +2205,121 @@ async fn serveer_favicon(State(state): State<AppState>) -> impl IntoResponse {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("image/svg+xml"));
     (StatusCode::OK, headers, svg).into_response()
+}
+
+// Hulpfuncties voor SEO: bepaal basis-URL en genereer /sitemap.xml, /robots.txt en /rss.xml
+fn bepaal_basis_url(headers: &HeaderMap) -> String {
+    if let Some(host) = headers.get("host").and_then(|h| h.to_str().ok()) {
+        let proto = if host.starts_with("localhost") || host.starts_with("127.0.0.1") {
+            "http"
+        } else {
+            "https"
+        };
+        return format!("{}://{}", proto, host);
+    }
+    let domein = haal_env_waarde("BLOGRUST_DOMAIN").unwrap_or_else(|| "blogrust.com".to_string());
+    if domein.starts_with("http://") || domein.starts_with("https://") {
+        domein.trim_end_matches('/').to_string()
+    } else if domein.starts_with("localhost") || domein.starts_with("127.0.0.1") {
+        format!("http://{}", domein)
+    } else {
+        format!("https://{}", domein)
+    }
+}
+
+async fn serveer_sitemap_xml(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let basis = bepaal_basis_url(&headers);
+    let posts = laad_alle_posts(&state.posts_map);
+
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n",
+    );
+
+    for pad in ["/", "/plugins", "/themes", "/download"] {
+        xml.push_str(&format!(
+            "  <url>\n    <loc>{}{}</loc>\n    <changefreq>daily</changefreq>\n    <priority>0.9</priority>\n  </url>\n",
+            basis, pad
+        ));
+    }
+
+    for post in posts.iter().filter(|p| !p.concept) {
+        xml.push_str(&format!(
+            "  <url>\n    <loc>{}/post/{}</loc>\n    <lastmod>{}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n",
+            basis, post.slug, post.datum
+        ));
+    }
+
+    xml.push_str("</urlset>\n");
+
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/xml; charset=utf-8"),
+    );
+    (StatusCode::OK, resp_headers, xml).into_response()
+}
+
+async fn serveer_robots_txt(headers: HeaderMap) -> impl IntoResponse {
+    let basis = bepaal_basis_url(&headers);
+    let inhoud = format!(
+        "User-agent: *\nAllow: /\nDisallow: /setup\nDisallow: /login\nDisallow: /instellingen\n\nSitemap: {}/sitemap.xml\n",
+        basis
+    );
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    (StatusCode::OK, resp_headers, inhoud).into_response()
+}
+
+async fn serveer_rss_xml(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let basis = bepaal_basis_url(&headers);
+    let (titel, beschrijving, _) = if is_geinstalleerd(&state.db_pad) {
+        haal_site_info_op(&state.db_pad).await
+    } else {
+        (
+            "BlogRust CMS".to_string(),
+            "Fast, modular Rust CMS with Markdown & Rhai Plugins.".to_string(),
+            "standaard.css".to_string(),
+        )
+    };
+    let posts = laad_alle_posts(&state.posts_map);
+
+    let mut xml = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n<channel>\n  <title>{}</title>\n  <link>{}</link>\n  <description>{}</description>\n",
+        titel.replace('&', "&amp;").replace('<', "&lt;"),
+        basis,
+        beschrijving.replace('&', "&amp;").replace('<', "&lt;")
+    );
+
+    for post in posts.iter().filter(|p| !p.concept) {
+        let veilige_titel = post.titel.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+        let veilige_samenvatting = post
+            .samenvatting
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        xml.push_str(&format!(
+            "  <item>\n    <title>{}</title>\n    <link>{}/post/{}</link>\n    <guid>{}/post/{}</guid>\n    <pubDate>{}</pubDate>\n    <description>{}</description>\n  </item>\n",
+            veilige_titel, basis, post.slug, basis, post.slug, post.datum, veilige_samenvatting
+        ));
+    }
+
+    xml.push_str("</channel>\n</rss>\n");
+
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/rss+xml; charset=utf-8"),
+    );
+    (StatusCode::OK, resp_headers, xml).into_response()
 }
 
 async fn haal_site_branding_op(db_pad: &str, titel: &str) -> (String, String, String, String) {
@@ -2057,6 +2589,9 @@ async fn home_pagina(
                     <p>{beschrijving}</p>
                 </div>
                 <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                    <a href="https://github.com/camhide1-code/blogrust-cms" target="_blank" rel="noopener noreferrer" class="github-portal-hero" title="Bekijk BlogRust CMS op GitHub (camhide1-code/blogrust-cms)" style="display:inline-block;width:54px;height:54px;border-radius:50%;box-shadow:0 4px 12px rgba(15,23,42,0.28);transition:transform 0.2s;flex-shrink:0;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+                        <img src="/media/github-icon.svg" alt="GitHub Repository" style="width:100%;height:100%;border-radius:50%;display:block;">
+                    </a>
                     <a href="/download/folder" title="Download de volledige BlogRust CMS Folder (.zip) inclusief README.md, Docker, Instellingen &amp; Mappen (zonder Google Auth)" style="display:inline-block;width:68px;height:68px;border-radius:50%;box-shadow:0 4px 12px rgba(234,88,12,0.35);transition:transform 0.2s;flex-shrink:0;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
                         <img src="/media/blogrust-download-rond.svg" alt="Download BlogRust Folder" style="width:100%;height:100%;border-radius:50%;display:block;">
                     </a>
@@ -3305,6 +3840,30 @@ fn bewerk_bericht(tekst) {
 }
 "#,
         ),
+        (
+            "tailwind.rhai",
+            "🌬️ Tailwind CSS Component & Theme Builder",
+            "Plaatst op /themes bij elke BlogRust CSS-class een dropdown-menu met kant-en-klare Tailwind CSS componenten, live preview en 1-klik presets.",
+            r#"// 🌬️ Tailwind CSS Component & Theme Builder Plug-in voor BlogRust
+fn bewerk_navigatie(nav_html) {
+    return nav_html + "\n<!-- BLOGRUST_TAILWIND_BUILDER -->";
+}
+"#,
+        ),
+        (
+            "seo.rhai",
+            "🔍 Smart SEO, Sitemap & Social Media Share",
+            "Voegt OpenGraph & X/Twitter Cards, Google Schema.org JSON-LD, Social Share knoppen, een live Google SERP-preview en koppelingen met /sitemap.xml, /robots.txt en /rss.xml toe.",
+            r#"// 🔍 Smart SEO, Search Engine Sitemap & Social Media Share Plug-in voor BlogRust
+fn bewerk_navigatie(nav_html) {
+    return nav_html + "\n<!-- BLOGRUST_SEO_GLOBAL -->";
+}
+
+fn bewerk_bericht(tekst) {
+    return tekst + "\n<!-- BLOGRUST_SEO_SHARE -->";
+}
+"#,
+        ),
     ]
 }
 
@@ -3793,7 +4352,7 @@ async fn render_bericht_formulier(
     for b in &media_bestanden {
         let pad = format!("/media/{}", b.bestandsnaam);
         media_keuze_html.push_str(&format!(
-            r#"<button type="button" class="media-chip" onclick="document.getElementById('cover').value='{pad}'">🖼️ {naam}</button>"#,
+            r#"<button type="button" class="media-chip" onclick="kiesMediaCover('{pad}')">🖼️ {naam}</button>"#,
             pad = pad,
             naam = b.bestandsnaam
         ));
@@ -3900,13 +4459,28 @@ async fn render_bericht_formulier(
                             <input type="text" id="tags" name="tags" value="{tags_w}" placeholder="rust, markdown, hugo">
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="cover">Cover Afbeelding (uit <code>/media/...</code> of URL)</label>
-                        <input type="text" id="cover" name="cover" value="{cover_w}" placeholder="/media/blogrust-banner.svg">
+                    <div class="form-group" style="padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+                        <label for="cover">🖼️ Cover Afbeelding of Dynamische Cover-Tekst (zonder losse SVG's)</label>
+                        <div class="grid" style="margin-bottom:10px;">
+                            <div>
+                                <label for="cover_tekst_titel" style="font-size:12px;color:#475569;">🏷️ Tekst in Cover-Banner (Hoofdtitel)</label>
+                                <input type="text" id="cover_tekst_titel" placeholder="Bijv. 🦀 BlogRust Tutorial" oninput="updateDynamischeCoverTekst()">
+                            </div>
+                            <div>
+                                <label for="cover_tekst_sub" style="font-size:12px;color:#475569;">📝 Ondertitel in Cover-Banner</label>
+                                <input type="text" id="cover_tekst_sub" placeholder="Bijv. Snel &amp; Modulair CMS in Rust" oninput="updateDynamischeCoverTekst()">
+                            </div>
+                        </div>
+                        <input type="text" id="cover" name="cover" value="{cover_w}" placeholder="/cover.svg?titel=... of /media/..." oninput="verversCoverPreview()">
                         <div class="media-chips">
-                            <span style="font-size:12px;color:#6b7280;">Kies uit <code>media/</code>:</span>
+                            <span style="font-size:12px;color:#6b7280;">Of kies een foto uit <code>media/</code>:</span>
                             {media_keuze_html}
+                            <button type="button" class="media-chip" onclick="kiesMediaCover('')">✖️ Geen cover</button>
                             <a href="/media" style="font-size:12px;color:#2271b1;text-decoration:none;margin-left:4px;">+ Nieuwe uploaden</a>
+                        </div>
+                        <div id="cover-preview-wrap" style="margin-top:10px;display:none;">
+                            <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;">👁️ Live Voorbeeld van Cover:</div>
+                            <img id="cover-preview-img" src="" alt="Cover Preview" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;border:1px solid #cbd5e1;">
                         </div>
                     </div>
                     <div class="form-group">
@@ -3939,6 +4513,46 @@ async fn render_bericht_formulier(
                         veld.value = '## Eerste Indruk\n\nBeschrijf het onderwerp van de review.\n\n| Pluspunten | Minpunten |\n| :--- | :--- |\n| ✅ Snel en betrouwbaar | ❌ Nog in ontwikkeling |\n\n## Eindcijfer: 9/10\n';
                     }}
                 }}
+
+                function updateDynamischeCoverTekst() {{
+                    const t = document.getElementById('cover_tekst_titel').value.trim() || '🦀 BlogRust';
+                    const s = document.getElementById('cover_tekst_sub').value.trim();
+                    const url = '/cover.svg?titel=' + encodeURIComponent(t) + '&sub=' + encodeURIComponent(s);
+                    document.getElementById('cover').value = url;
+                    verversCoverPreview();
+                }}
+
+                function kiesMediaCover(pad) {{
+                    document.getElementById('cover').value = pad;
+                    verversCoverPreview();
+                }}
+
+                function verversCoverPreview() {{
+                    const val = (document.getElementById('cover').value || '').trim();
+                    const wrap = document.getElementById('cover-preview-wrap');
+                    const img = document.getElementById('cover-preview-img');
+                    if (val) {{
+                        img.src = val;
+                        wrap.style.display = 'block';
+                    }} else {{
+                        wrap.style.display = 'none';
+                    }}
+                }}
+
+                // Vul bij het openen van de editor bestaande cover-tekst velden in & toon live preview
+                (function initCoverVelden() {{
+                    const huidige = (document.getElementById('cover').value || '').trim();
+                    if (huidige.startsWith('/cover.svg?')) {{
+                        const params = new URLSearchParams(huidige.split('?')[1] || '');
+                        document.getElementById('cover_tekst_titel').value = params.get('titel') || '';
+                        document.getElementById('cover_tekst_sub').value = params.get('sub') || '';
+                    }} else if (huidige === '/media/blogrust-banner.svg') {{
+                        const artTitel = document.getElementById('titel').value.trim() || '🦀 BlogRust Media';
+                        document.getElementById('cover_tekst_titel').value = artTitel;
+                        document.getElementById('cover_tekst_sub').value = document.getElementById('samenvatting').value.trim() || 'Fast & Modular Rust CMS';
+                    }}
+                    verversCoverPreview();
+                }})();
             </script>
         </body>
         </html>
@@ -4617,17 +5231,21 @@ async fn download_portal_pagina(
             </nav>
 
             <section class="card" style="text-align:center;padding:36px 30px;">
-                <div style="margin-bottom:16px;">
+                <div style="margin-bottom:16px;display:flex;justify-content:center;align-items:center;gap:20px;">
                     <a href="/download/folder" title="Klik op het ronde logo om de volledige BlogRust CMS Folder (blogrust-cms.zip) te downloaden" style="display:inline-block;width:136px;height:136px;border-radius:50%;box-shadow:0 8px 24px rgba(234,88,12,0.38);transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.07)'" onmouseout="this.style.transform='scale(1)'">
                         <img src="/media/blogrust-download-rond.svg" alt="Ronde Download Knop" style="width:100%;height:100%;border-radius:50%;display:block;">
+                    </a>
+                    <a href="https://github.com/camhide1-code/blogrust-cms" target="_blank" rel="noopener noreferrer" title="Bekijk en Clone BlogRust CMS op GitHub (camhide1-code/blogrust-cms)" style="display:inline-block;width:96px;height:96px;border-radius:50%;box-shadow:0 8px 20px rgba(15,23,42,0.32);transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.07)'" onmouseout="this.style.transform='scale(1)'">
+                        <img src="/media/github-icon.svg" alt="GitHub Repository" style="width:100%;height:100%;border-radius:50%;display:block;">
                     </a>
                 </div>
                 <h1 style="font-size:30px;color:#ea580c;margin:0 0 8px 0;">🦀 Download Volledige BlogRust CMS Folder</h1>
                 <p style="font-size:15px;color:#15803d;font-weight:600;margin:0 auto 10px auto;">✨ Complete Projectmap (<code>blogrust-cms.zip</code>) — Inclusief <code>README.md</code>, Docker &amp; Caddy, <code>/instellingen</code> pagina én alle mappen (zónder Google Auth)</p>
-                <p style="font-size:15px;color:#4b5563;max-width:660px;margin:0 auto 22px auto;">Klik op het <strong>ronde BlogRust-logo</strong> hierboven om in één keer de complete map te downloaden met <code>src/main.rs</code>, <code>Cargo.toml</code>, <code>README.md</code>, <code>Dockerfile</code>, <code>docker-compose.yml</code>, <code>Caddyfile</code> en de mappen <code>posts/</code>, <code>plugins/</code>, <code>themes/</code>, <code>media/</code>, <code>scaffolds/</code> en <code>data/</code>.</p>
+                <p style="font-size:15px;color:#4b5563;max-width:660px;margin:0 auto 22px auto;">Klik op het <strong>ronde BlogRust-logo</strong> om in één keer de complete map te downloaden, of klik op het <strong>ronde GitHub-icoon</strong> om de repository te bekijken en via Git te clonen.</p>
                 <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
                     <a href="/download/folder" class="dl-btn" style="font-size:16px;padding:12px 26px;background:#ea580c;">📁 Download Volledige Folder (blogrust-cms.zip)</a>
-                    <a href="/download/bestand/README.md" class="dl-btn" style="background:#0f172a;font-size:15px;padding:12px 20px;">📖 Download README.md</a>
+                    <a href="https://github.com/camhide1-code/blogrust-cms" target="_blank" rel="noopener noreferrer" class="dl-btn" style="background:#0f172a;font-size:15px;padding:12px 22px;display:inline-flex;align-items:center;gap:8px;"><img src="/media/github-icon.svg" alt="GH" style="width:20px;height:20px;border-radius:50%;"> GitHub Repository</a>
+                    <a href="/download/bestand/README.md" class="dl-btn" style="background:#334155;font-size:15px;padding:12px 20px;">📖 Download README.md</a>
                 </div>
                 <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;">
                     <a href="/download/bestand/main.rs" class="dl-btn" style="background:#4b5563;font-size:13px;padding:8px 14px;">🦀 Losse main.rs (Zonder Google Auth)</a>

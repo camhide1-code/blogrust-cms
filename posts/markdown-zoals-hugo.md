@@ -1,10 +1,9 @@
 ---
 title: "2. Markdown & Categorieën zoals in Hugo"
 date: "2026-11-11"
-weight: 2
 category: "Tutorials"
 tags: ["hugo", "frontmatter", "handleiding"]
-cover: "/media/blogrust-banner.svg"
+cover: ""
 summary: "Ontdek hoe je nieuwe artikelen toevoegt via de map posts/ of rechtstreeks vanuit het dashboard."
 draft: false
 ---
@@ -26,3 +25,6 @@ Met het `posts/` systeem kun je op twee manieren nieuwe artikelen schrijven:
 | `draft` (of `concept`) | Verberg nog even als concept (`true`/`false`) | `false` |
 
 Veel plezier met bloggen in **BlogRust**! 🦀
+
+
+

@@ -6,6 +6,6 @@
     </linearGradient>
   </defs>
   <rect width="800" height="320" fill="url(#bg)" rx="12"/>
-  <text x="50%" y="46%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="44" font-weight="bold">🦀 BlogRust Media</text>
-  <text x="50%" y="64%" dominant-baseline="middle" text-anchor="middle" fill="#fed7aa" font-family="system-ui, sans-serif" font-size="20">Razendsnel CMS met Markdown, Rhai Plug-ins &amp; Media Bibliotheek</text>
+  <text x="50%" y="46%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="44" font-weight="bold">🦀 BlogRust CMS</text>
+  <text x="50%" y="64%" dominant-baseline="middle" text-anchor="middle" fill="#fed7aa" font-family="system-ui, sans-serif" font-size="20">Fast, Modular Rust CMS with Markdown, Rhai Plugins &amp; Themes</text>
 </svg>
